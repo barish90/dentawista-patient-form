@@ -245,26 +245,8 @@ export default function PatientForm({ session }: { session: any }) {
         .from('patients')
         .insert([
           {
-            name: form.name,
-            gender: form.gender,
-            date_of_birth: form.dateOfBirth,
-            medicines: form.medicines,
-            medical_conditions: form.medicalConditions,
-            previous_surgeries: form.previousSurgeries,
-            allergies: form.allergies,
-            affected_teeth: form.affectedTeeth,
-            has_cavity: form.hasCavity,
-            needs_root_canal: form.needsRootCanal,
-            needs_implant: form.needsImplant,
-            needs_extraction: form.needsExtraction,
-            missing_tooth: form.missingTooth,
-            root_treated: form.rootTreated,
-            existing_implant: form.existingImplant,
-            has_amalgam: form.hasAmalgam,
-            has_broken_teeth: form.hasBrokenTeeth,
-            has_crown: form.hasCrown,
-            user_id: session.user.id,
-            submitted_by: session.user.email
+            ...form,
+            submitted_by_id: session.user.id
           }
         ]);
 

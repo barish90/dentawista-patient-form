@@ -14,6 +14,23 @@ const router = {
   }
 };
 
+function ErrorFallback({error, resetErrorBoundary}: {error: Error, resetErrorBoundary: () => void}) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-red-50">
+      <div className="text-center p-4">
+        <h1 className="text-red-600 text-xl mb-2">Something went wrong</h1>
+        <p className="text-gray-600">{error.message}</p>
+        <button 
+          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
+          onClick={resetErrorBoundary}
+        >
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -120,7 +137,7 @@ function App() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
         </div>
       }>
-        <ErrorBoundary>
+        <ErrorBoundary FallbackComponent={ErrorFallback} onReset={() => window.location.reload()}>
           <AppRoutes session={session} isAdmin={isAdmin} />
         </ErrorBoundary>
       </Suspense>
@@ -166,45 +183,6 @@ function AppRoutes({ session, isAdmin }: AppRoutesProps) {
       />
     </Routes>
   );
-}
-
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; error: Error | null }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('React Error Boundary caught an error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-red-50">
-          <div className="text-center p-4">
-            <h1 className="text-red-600 text-xl mb-2">Something went wrong</h1>
-            <p className="text-gray-600">{this.state.error?.message}</p>
-            <button 
-              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
-              onClick={() => window.location.reload()}
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
 }
 
 export default App;

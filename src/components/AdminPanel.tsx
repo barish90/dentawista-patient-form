@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { supabase } from '../lib/supabase';
-import { Search, Download, LogOut, UserPlus } from 'lucide-react';
+import { Search, Download, LogOut, UserPlus, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface Patient {
@@ -9,24 +9,14 @@ interface Patient {
   name: string;
   gender: string;
   date_of_birth: string;
-  created_at: string;
-  submitted_by: string;
   medicines: string[];
   medical_conditions: string[];
   previous_surgeries: string[];
   allergies: string[];
-  affected_teeth: {
-    cavity: number[];
-    rootCanal: number[];
-    implant: number[];
-    extraction: number[];
-    missing: number[];
-    treated: number[];
-    existingImplant: number[];
-    amalgam: number[];
-    broken: number[];
-    crown: number[];
-  };
+  affected_teeth: Record<string, number[]>;
+  submitted_by_id: string;
+  created_at: string;
+  submitter_name?: string;
 }
 
 export default function AdminPanel() {
@@ -36,33 +26,55 @@ export default function AdminPanel() {
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expandedPatient, setExpandedPatient] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPatients, setTotalPatients] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchPatients();
-  }, []);
+  }, [pageSize, currentPage]);
 
   const fetchPatients = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      
+      // First get total count
+      const { count } = await supabase
         .from('patients')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*', { count: 'exact', head: true });
+      
+      setTotalPatients(count || 0);
 
-      if (error) {
-        if (error.code === '42P01') { // Table doesn't exist
-          setError('No patients found. The patients table may need to be set up.');
-        } else {
-          setError(error.message);
-        }
-        return;
-      }
+      // Update the query to specify the exact relationship
+      const { data: patients, error: patientsError } = await supabase
+        .from('patients')
+        .select(`
+          *,
+          user_profiles!patients_submitted_by_id_fkey (
+            email,
+            raw_user_meta_data
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
 
-      setPatients(data || []);
+      if (patientsError) throw patientsError;
+
+      // Transform the data to include submitter name
+      const patientsWithSubmitters = patients?.map(patient => ({
+        ...patient,
+        submitter_name: patient.user_profiles?.raw_user_meta_data?.name || 
+                       patient.user_profiles?.raw_user_meta_data?.full_name ||
+                       patient.user_profiles?.email ||
+                       'Unknown'
+      })) || [];
+
+      setPatients(patientsWithSubmitters);
     } catch (err) {
-      setError('An unexpected error occurred');
-      console.error('Error:', err);
+      console.error('Error fetching patients:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred fetching patients');
     } finally {
       setLoading(false);
     }
@@ -88,9 +100,19 @@ export default function AdminPanel() {
     }
   };
 
+  const togglePatientDetails = (patientId: string) => {
+    setExpandedPatient(expandedPatient === patientId ? null : patientId);
+  };
+
+  const formatDate = (date: string) => {
+    return new Date(date).toLocaleDateString();
+  };
+
+  const totalPages = Math.ceil(totalPatients / pageSize);
+
   const filteredPatients = patients.filter(patient =>
     patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.submitted_by?.toLowerCase().includes(searchTerm.toLowerCase())
+    patient.submitter_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const exportToCSV = () => {
@@ -110,7 +132,7 @@ export default function AdminPanel() {
       patient.name,
       patient.gender,
       patient.date_of_birth,
-      patient.submitted_by || 'N/A',
+      patient.submitter_name || 'N/A',
       format(new Date(patient.created_at), 'yyyy-MM-dd HH:mm:ss'),
       patient.medicines.join('; '),
       patient.medical_conditions.join('; '),
@@ -128,6 +150,14 @@ export default function AdminPanel() {
     link.href = URL.createObjectURL(blob);
     link.download = `patients_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
+  };
+
+  const handlePageSizeChange = async (newSize: number) => {
+    setLoading(true);
+    setPageSize(newSize);
+    setCurrentPage(1);
+    await fetchPatients();
+    setLoading(false);
   };
 
   if (loading) {
@@ -231,37 +261,155 @@ export default function AdminPanel() {
             </button>
           </div>
 
-          {patients.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-gray-600">No patients found.</p>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b">
+              <div className="flex items-center space-x-4">
+                <span>Show</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  className="border rounded px-2 py-1"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span>entries</span>
+              </div>
+              <div>
+                Total Patients: {totalPatients}
+              </div>
             </div>
-          ) : (
-            <div className="bg-white shadow overflow-hidden sm:rounded-md">
-              <ul className="divide-y divide-gray-200">
-                {filteredPatients.map((patient) => (
-                  <li key={patient.id} className="px-6 py-4 hover:bg-gray-50">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-medium text-gray-900">{patient.name}</h3>
-                        <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-500">
-                          <div>
-                            <p><span className="font-medium">Gender:</span> {patient.gender}</p>
-                            <p><span className="font-medium">Date of Birth:</span> {patient.date_of_birth}</p>
-                            <p><span className="font-medium">Submitted By:</span> {patient.submitted_by || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p><span className="font-medium">Submission Date:</span> {format(new Date(patient.created_at), 'PPP')}</p>
-                            <p><span className="font-medium">Medical Conditions:</span> {patient.medical_conditions.length}</p>
-                            <p><span className="font-medium">Medications:</span> {patient.medicines.length}</p>
-                          </div>
-                        </div>
+
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Gender
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date of Birth
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Submitted By
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date Added
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Details
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-4 text-center">
+                      <div className="flex justify-center items-center space-x-2">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
+                        <span>Loading patients...</span>
                       </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    </td>
+                  </tr>
+                ) : error ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-4 text-red-600">{error}</td>
+                  </tr>
+                ) : (
+                  patients.map((patient) => (
+                    <React.Fragment key={patient.id}>
+                      <tr>
+                        <td className="px-6 py-4 whitespace-nowrap">{patient.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap capitalize">{patient.gender}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">{formatDate(patient.date_of_birth)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">{patient.submitter_name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">{formatDate(patient.created_at)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <button
+                            onClick={() => togglePatientDetails(patient.id)}
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            {expandedPatient === patient.id ? (
+                              <ChevronUp className="h-5 w-5" />
+                            ) : (
+                              <ChevronDown className="h-5 w-5" />
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedPatient === patient.id && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-4 bg-gray-50">
+                            <div className="space-y-4">
+                              <div>
+                                <h3 className="font-semibold">Medical Information</h3>
+                                <div className="grid grid-cols-2 gap-4 mt-2">
+                                  <div>
+                                    <h4 className="font-medium">Medicines</h4>
+                                    <ul className="list-disc list-inside">
+                                      {patient.medicines.map((med, i) => (
+                                        <li key={i}>{med}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  <div>
+                                    <h4 className="font-medium">Medical Conditions</h4>
+                                    <ul className="list-disc list-inside">
+                                      {patient.medical_conditions.map((condition, i) => (
+                                        <li key={i}>{condition}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                </div>
+                              </div>
+                              <div>
+                                <h3 className="font-semibold">Dental Information</h3>
+                                <div className="grid grid-cols-2 gap-4 mt-2">
+                                  {Object.entries(patient.affected_teeth).map(([condition, teeth]) => (
+                                    <div key={condition}>
+                                      <h4 className="font-medium capitalize">
+                                        {condition.replace(/([A-Z])/g, ' $1').trim()}
+                                      </h4>
+                                      <p>{teeth.join(', ') || 'None'}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))
+                )}
+              </tbody>
+            </table>
+
+            <div className="px-4 py-3 border-t flex items-center justify-between">
+              <div>
+                Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalPatients)} of {totalPatients} entries
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 border rounded disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 border rounded disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
             </div>
-          )}
+          </div>
         </div>
       </main>
     </div>
