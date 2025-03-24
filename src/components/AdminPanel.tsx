@@ -35,6 +35,7 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -43,15 +44,25 @@ export default function AdminPanel() {
 
   const fetchPatients = async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('patients')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '42P01') { // Table doesn't exist
+          setError('No patients found. The patients table may need to be set up.');
+        } else {
+          setError(error.message);
+        }
+        return;
+      }
+
       setPatients(data || []);
-    } catch (error) {
-      console.error('Error fetching patients:', error);
+    } catch (err) {
+      setError('An unexpected error occurred');
+      console.error('Error:', err);
     } finally {
       setLoading(false);
     }
@@ -118,6 +129,21 @@ export default function AdminPanel() {
     link.download = `patients_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
   };
+
+  if (loading) {
+    return <div>Loading patients...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="bg-red-50 border border-red-200 rounded p-4">
+          <h2 className="text-red-800 font-medium">Error</h2>
+          <p className="text-red-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -195,10 +221,9 @@ export default function AdminPanel() {
             </button>
           </div>
 
-          {loading ? (
+          {patients.length === 0 ? (
             <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading patient records...</p>
+              <p className="text-gray-600">No patients found.</p>
             </div>
           ) : (
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
