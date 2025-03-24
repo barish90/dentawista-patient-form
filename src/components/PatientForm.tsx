@@ -37,6 +37,16 @@ interface PatientForm {
   allergies: string[];
 }
 
+interface PatientFormData {
+  name: string;
+  age: number;
+  gender: string;
+  medical_history: string;
+  affected_teeth: string[];
+  treatment_plan: string;
+  user_id: string;
+}
+
 const initialForm: PatientForm = {
   name: '',
   gender: '',
@@ -231,32 +241,19 @@ export default function PatientForm({ session }: { session: any }) {
     e.preventDefault();
     
     try {
-      const { error } = await supabase.from('patients').insert({
-        name: form.name,
-        gender: form.gender,
-        date_of_birth: form.dateOfBirth,
-        medicines: form.medicines,
-        has_cavity: form.hasCavity === 'yes',
-        needs_root_canal: form.needsRootCanal === 'yes',
-        needs_implant: form.needsImplant === 'yes',
-        needs_extraction: form.needsExtraction === 'yes',
-        missing_tooth: form.missingTooth === 'yes',
-        root_treated: form.rootTreated === 'yes',
-        existing_implant: form.existingImplant === 'yes',
-        has_amalgam: form.hasAmalgam === 'yes',
-        has_broken_teeth: form.hasBrokenTeeth === 'yes',
-        has_crown: form.hasCrown === 'yes',
-        affected_teeth: form.affectedTeeth,
-        user_id: session?.user?.id,
-        submitted_by: userName,
-        medical_conditions: form.medicalConditions,
-        previous_surgeries: form.previousSurgeries,
-        allergies: form.allergies
-      });
+      const { data, error } = await supabase
+        .from('patients')
+        .insert([
+          {
+            ...form,
+            affected_teeth: form.affectedTeeth.affected_teeth || [],
+            user_id: session.user.id
+          }
+        ]);
 
       if (error) throw error;
-
-      setMessage({ type: 'success', text: 'Patient information saved successfully!' });
+      
+      setMessage({ type: 'success', text: 'Patient data saved successfully!' });
       setForm(initialForm);
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message });
