@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { User, Calendar, Plus, X, LogOut } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, Calendar, Plus, X, LogOut, Minus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { TeethDiagram } from './TeethDiagram';
 import { ImageUploader } from './ImageUploader';
+import { v4 as uuidv4 } from 'uuid';
+import { ImageViewer } from './ImageViewer';
 
 interface PatientForm {
   name: string;
@@ -35,6 +37,8 @@ interface PatientForm {
   medicalConditions: string[];
   previousSurgeries: string[];
   allergies: string[];
+  images?: string[];
+  model_files?: string[];
 }
 
 interface PatientFormData {
@@ -45,6 +49,13 @@ interface PatientFormData {
   affected_teeth: string[];
   treatment_plan: string;
   user_id: string;
+}
+
+interface FileUpload {
+  path: string;
+  type: 'image' | 'model';
+  originalName: string;
+  url?: string;
 }
 
 const initialForm: PatientForm = {
@@ -91,6 +102,11 @@ export default function PatientForm({ session }: { session: any }) {
   const [newCondition, setNewCondition] = useState('');
   const [newSurgery, setNewSurgery] = useState('');
   const [newAllergy, setNewAllergy] = useState('');
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   React.useEffect(() => {
     if (session?.user?.user_metadata) {
@@ -191,18 +207,79 @@ export default function PatientForm({ session }: { session: any }) {
     });
   };
 
-  const handleImageSelect = async (file: File) => {
+  const handleFileUpload = async (file: File, type: 'image' | 'model'): Promise<FileUpload | null> => {
     try {
-      const { data, error } = await supabase.storage
-        .from('xray-images')
-        .upload(`${session.user.id}/${file.name}`, file);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${uuidv4()}.${fileExt}`;
+      const bucketName = type === 'image' ? 'xray-images' : 'model-files';
 
-      if (error) throw error;
-      console.log('Image uploaded successfully:', data);
-    } catch (error: any) {
-      console.error('Error uploading image:', error.message);
+      const { data, error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+      if (!data?.path) throw new Error('No path returned from upload');
+
+      const { data: { publicUrl } } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(data.path);
+
+      return {
+        path: data.path,
+        type,
+        originalName: file.name,
+        url: publicUrl
+      };
+    } catch (error) {
+      setMessage({ 
+        type: 'error', 
+        text: error instanceof Error ? error.message : 'Error uploading file' 
+      });
+      return null;
     }
   };
+
+  const handleImageSelect = async (file: File) => {
+    try {
+      const previewUrl = URL.createObjectURL(file);
+      setPreviewImage(previewUrl);
+
+      const upload = await handleFileUpload(file, 'image');
+      if (upload) {
+        setForm(prev => ({
+          ...prev,
+          images: [...(prev.images || []), upload.path]
+        }));
+      }
+    } catch (error) {
+      console.error('Error handling image selection:', error);
+      setMessage({
+        type: 'error',
+        text: 'Failed to upload image. Please try again.'
+      });
+    }
+  };
+
+  const handleModelSelect = async (file: File) => {
+    const upload = await handleFileUpload(file, 'model');
+    if (upload) {
+      setForm(prev => ({
+        ...prev,
+        model_files: [...(prev.model_files || []), upload.path]
+      }));
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (previewImage) {
+        URL.revokeObjectURL(previewImage);
+      }
+    };
+  }, [previewImage]);
 
   const TeethSelector = ({ condition }: { condition: keyof PatientForm['affectedTeeth'] }) => {
     const showSelector = () => {
@@ -241,23 +318,82 @@ export default function PatientForm({ session }: { session: any }) {
     e.preventDefault();
     
     try {
-      const { data, error } = await supabase
+      if (form.images?.length === 0 && previewImage) {
+        setMessage({ 
+          type: 'error', 
+          text: 'Please wait for image upload to complete before submitting' 
+        });
+        return;
+      }
+
+      const patientData = {
+        name: form.name,
+        gender: form.gender,
+        date_of_birth: form.dateOfBirth,
+        medicines: form.medicines,
+        medical_conditions: form.medicalConditions,
+        previous_surgeries: form.previousSurgeries,
+        allergies: form.allergies,
+        affected_teeth: form.affectedTeeth,
+        has_cavity: form.hasCavity === 'yes',
+        needs_root_canal: form.needsRootCanal === 'yes',
+        needs_implant: form.needsImplant === 'yes',
+        needs_extraction: form.needsExtraction === 'yes',
+        missing_tooth: form.missingTooth === 'yes',
+        root_treated: form.rootTreated === 'yes',
+        existing_implant: form.existingImplant === 'yes',
+        has_amalgam: form.hasAmalgam === 'yes',
+        has_broken_teeth: form.hasBrokenTeeth === 'yes',
+        has_crown: form.hasCrown === 'yes',
+        images: form.images || [],
+        model_files: form.model_files || [],
+        submitted_by_id: session.user.id
+      };
+
+      const { error } = await supabase
         .from('patients')
-        .insert([
-          {
-            ...form,
-            submitted_by_id: session.user.id
-          }
-        ]);
+        .insert([patientData]);
 
       if (error) throw error;
       
       setMessage({ type: 'success', text: 'Patient data saved successfully!' });
       setForm(initialForm);
-    } catch (error: any) {
-      console.error('Error saving patient:', error);
-      setMessage({ type: 'error', text: error.message });
+      setPreviewImage(null);
+      setScale(1);
+      setPosition({ x: 0, y: 0 });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred while saving patient data';
+      setMessage({ type: 'error', text: errorMessage });
     }
+  };
+
+  const handleZoomIn = () => {
+    setScale(prev => Math.min(prev + 0.25, 3));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prev => Math.max(prev - 0.25, 0.5));
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    
+    setPosition({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
   };
 
   return (
@@ -523,7 +659,78 @@ export default function PatientForm({ session }: { session: any }) {
           {/* X-Ray Images Section */}
           <div className="space-y-6 mt-8">
             <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">X-Ray Images</h2>
-            <ImageUploader onImageSelect={handleImageSelect} />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">X-Ray Images</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => e.target.files?.[0] && handleImageSelect(e.target.files[0])}
+                  className="mt-1 block w-full"
+                />
+                
+                {previewImage && (
+                  <div className="mt-4 relative">
+                    <div 
+                      className="relative w-full h-64 border rounded-lg overflow-hidden bg-gray-100"
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                    >
+                      <img
+                        src={previewImage}
+                        alt="X-ray preview"
+                        className="w-full h-full object-contain select-none"
+                        style={{
+                          transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                          transition: isDragging ? 'none' : 'transform 0.1s',
+                          cursor: isDragging ? 'grabbing' : 'grab'
+                        }}
+                        draggable={false}
+                      />
+                      <div className="absolute top-2 right-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleZoomIn}
+                          className="p-1 bg-white rounded-full shadow hover:bg-gray-100 transition-colors"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleZoomOut}
+                          className="p-1 bg-white rounded-full shadow hover:bg-gray-100 transition-colors"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewImage(null);
+                            setScale(1);
+                            setPosition({ x: 0, y: 0 });
+                          }}
+                          className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">3D Models (.obj, .ply)</label>
+                <input
+                  type="file"
+                  accept=".obj,.ply"
+                  onChange={(e) => e.target.files?.[0] && handleModelSelect(e.target.files[0])}
+                  className="mt-1 block w-full"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Diagnosis Section */}

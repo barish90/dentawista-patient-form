@@ -17,6 +17,8 @@ interface Patient {
   submitted_by_id: string;
   created_at: string;
   submitter_name?: string;
+  images?: string[];
+  model_files?: string[];
 }
 
 export default function AdminPanel() {
@@ -40,14 +42,12 @@ export default function AdminPanel() {
     try {
       setLoading(true);
       
-      // First get total count
       const { count } = await supabase
         .from('patients')
         .select('*', { count: 'exact', head: true });
       
       setTotalPatients(count || 0);
 
-      // Update the query to specify the exact relationship
       const { data: patients, error: patientsError } = await supabase
         .from('patients')
         .select(`
@@ -62,7 +62,6 @@ export default function AdminPanel() {
 
       if (patientsError) throw patientsError;
 
-      // Transform the data to include submitter name
       const patientsWithSubmitters = patients?.map(patient => ({
         ...patient,
         submitter_name: patient.user_profiles?.raw_user_meta_data?.name || 
@@ -73,7 +72,6 @@ export default function AdminPanel() {
 
       setPatients(patientsWithSubmitters);
     } catch (err) {
-      console.error('Error fetching patients:', err);
       setError(err instanceof Error ? err.message : 'An error occurred fetching patients');
     } finally {
       setLoading(false);
@@ -158,6 +156,41 @@ export default function AdminPanel() {
     setCurrentPage(1);
     await fetchPatients();
     setLoading(false);
+  };
+
+  const getFileUrl = async (path: string) => {
+    try {
+      const bucketName = path.startsWith('xray-images/') ? 'xray-images' : 'model-files';
+      const { data } = await supabase.storage
+        .from(bucketName)
+        .createSignedUrl(path, 3600); // URL valid for 1 hour
+
+      return data?.signedUrl;
+    } catch (error) {
+      console.error('Error getting file URL:', error);
+      return null;
+    }
+  };
+
+  const getImageUrl = (path: string) => {
+    try {
+      if (!path) {
+        return null;
+      }
+
+      if (path.startsWith('http')) {
+        return path;
+      }
+
+      const cleanPath = path.replace(/^xray-images\//, '');
+      const { data: { publicUrl } } = supabase.storage
+        .from('xray-images')
+        .getPublicUrl(cleanPath);
+
+      return publicUrl;
+    } catch (error) {
+      return null;
+    }
   };
 
   if (loading) {
@@ -299,15 +332,12 @@ export default function AdminPanel() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Date Added
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Details
-                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center">
+                    <td colSpan={5} className="px-6 py-4 text-center">
                       <div className="flex justify-center items-center space-x-2">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
                         <span>Loading patients...</span>
@@ -316,33 +346,33 @@ export default function AdminPanel() {
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-red-600">{error}</td>
+                    <td colSpan={5} className="px-6 py-4 text-red-600">{error}</td>
                   </tr>
                 ) : (
                   patients.map((patient) => (
                     <React.Fragment key={patient.id}>
-                      <tr>
+                      <tr
+                        onClick={() => togglePatientDetails(patient.id)}
+                        className={`hover:bg-gray-50 cursor-pointer transition-colors ${
+                          expandedPatient === patient.id ? 'bg-gray-50' : ''
+                        }`}
+                      >
                         <td className="px-6 py-4 whitespace-nowrap">{patient.name}</td>
                         <td className="px-6 py-4 whitespace-nowrap capitalize">{patient.gender}</td>
                         <td className="px-6 py-4 whitespace-nowrap">{formatDate(patient.date_of_birth)}</td>
                         <td className="px-6 py-4 whitespace-nowrap">{patient.submitter_name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">{formatDate(patient.created_at)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <button
-                            onClick={() => togglePatientDetails(patient.id)}
-                            className="text-indigo-600 hover:text-indigo-900"
-                          >
-                            {expandedPatient === patient.id ? (
-                              <ChevronUp className="h-5 w-5" />
-                            ) : (
-                              <ChevronDown className="h-5 w-5" />
-                            )}
-                          </button>
+                        <td className="px-6 py-4 whitespace-nowrap flex items-center justify-between">
+                          <span>{formatDate(patient.created_at)}</span>
+                          {expandedPatient === patient.id ? (
+                            <ChevronUp className="h-5 w-5 text-gray-400" />
+                          ) : (
+                            <ChevronDown className="h-5 w-5 text-gray-400" />
+                          )}
                         </td>
                       </tr>
                       {expandedPatient === patient.id && (
                         <tr>
-                          <td colSpan={6} className="px-6 py-4 bg-gray-50">
+                          <td colSpan={5} className="px-6 py-4 bg-gray-50">
                             <div className="space-y-4">
                               <div>
                                 <h3 className="font-semibold">Medical Information</h3>
@@ -376,6 +406,77 @@ export default function AdminPanel() {
                                       <p>{teeth.join(', ') || 'None'}</p>
                                     </div>
                                   ))}
+                                </div>
+                              </div>
+                              <div className="mt-4">
+                                <h3 className="font-semibold">Uploaded Files</h3>
+                                <div className="grid grid-cols-2 gap-4 mt-2">
+                                  <div>
+                                    <h4 className="font-medium">X-Ray Images</h4>
+                                    <div className="grid grid-cols-2 gap-4 mt-2">
+                                      {patient.images && patient.images.length > 0 ? (
+                                        patient.images.map((imagePath, index) => {
+                                          const imageUrl = getImageUrl(imagePath);
+                                          return imageUrl ? (
+                                            <div key={index} className="relative group">
+                                              <img
+                                                src={imageUrl}
+                                                alt={`X-ray ${index + 1}`}
+                                                className="w-full h-40 object-cover rounded cursor-pointer"
+                                                onClick={(e) => {
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  window.open(imageUrl, '_blank');
+                                                }}
+                                                onError={(e) => {
+                                                  const imgElement = e.target as HTMLImageElement;
+                                                  imgElement.src = '/images/placeholder-image.png';
+                                                }}
+                                              />
+                                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity flex items-center justify-center">
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    window.open(imageUrl, '_blank');
+                                                  }}
+                                                  className="opacity-0 group-hover:opacity-100 bg-white text-gray-800 px-4 py-2 rounded shadow"
+                                                >
+                                                  View Full Size
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : null;
+                                        })
+                                      ) : (
+                                        <p className="text-gray-500 italic">No X-ray images uploaded</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
+                                  <div>
+                                    <h4 className="font-medium">3D Models</h4>
+                                    <div className="space-y-2 mt-2">
+                                      {patient.model_files && patient.model_files.length > 0 ? (
+                                        patient.model_files.map((path, index) => {
+                                          const modelUrl = getImageUrl(path);
+                                          return modelUrl ? (
+                                            <div key={index} className="flex items-center justify-between p-2 bg-gray-100 rounded">
+                                              <span>{path.split('/').pop()}</span>
+                                              <button
+                                                onClick={() => window.open(modelUrl, '_blank')}
+                                                className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                                              >
+                                                <Download className="h-4 w-4" />
+                                              </button>
+                                            </div>
+                                          ) : null;
+                                        })
+                                      ) : (
+                                        <p className="text-gray-500 italic">No 3D models uploaded</p>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
