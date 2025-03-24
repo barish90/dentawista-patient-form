@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, UNSAFE_DataRouterContext, UNSAFE_DataRouterStateContext } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import PatientForm from './components/PatientForm';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
+import { ErrorBoundary } from 'react-error-boundary';
 
 const router = {
   future: {
@@ -114,7 +115,15 @@ function App() {
 
   return (
     <Router {...router}>
-      <AppRoutes session={session} isAdmin={isAdmin} />
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        </div>
+      }>
+        <ErrorBoundary>
+          <AppRoutes session={session} isAdmin={isAdmin} />
+        </ErrorBoundary>
+      </Suspense>
     </Router>
   );
 }
@@ -157,6 +166,45 @@ function AppRoutes({ session, isAdmin }: AppRoutesProps) {
       />
     </Routes>
   );
+}
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('React Error Boundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-red-50">
+          <div className="text-center p-4">
+            <h1 className="text-red-600 text-xl mb-2">Something went wrong</h1>
+            <p className="text-gray-600">{this.state.error?.message}</p>
+            <button 
+              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
+              onClick={() => window.location.reload()}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 export default App;
