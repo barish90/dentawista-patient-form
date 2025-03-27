@@ -8,6 +8,18 @@ interface TeethDiagramProps {
   lowerTeeth: number[];
   condition: string;
   missingTeeth: number[];
+  allSelectedTeeth: {
+    cavity: number[];
+    rootCanal: number[];
+    implant: number[];
+    extraction: number[];
+    missing: number[];
+    treated: number[];
+    existingImplant: number[];
+    amalgam: number[];
+    broken: number[];
+    crown: number[];
+  };
 }
 
 export const TeethDiagram: React.FC<TeethDiagramProps> = ({
@@ -16,7 +28,8 @@ export const TeethDiagram: React.FC<TeethDiagramProps> = ({
   upperTeeth,
   lowerTeeth,
   condition,
-  missingTeeth
+  missingTeeth,
+  allSelectedTeeth
 }) => {
   return (
     <div className="mt-4 p-6 bg-gray-50 rounded-lg">
@@ -32,6 +45,7 @@ export const TeethDiagram: React.FC<TeethDiagramProps> = ({
               condition={condition}
               isUpper={true}
               isMissing={missingTeeth.includes(tooth)}
+              allSelectedTeeth={allSelectedTeeth}
             />
           ))}
         </div>
@@ -47,6 +61,7 @@ export const TeethDiagram: React.FC<TeethDiagramProps> = ({
               condition={condition}
               isUpper={false}
               isMissing={missingTeeth.includes(tooth)}
+              allSelectedTeeth={allSelectedTeeth}
             />
           ))}
         </div>

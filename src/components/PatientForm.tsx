@@ -302,6 +302,20 @@ export default function PatientForm({ session }: { session: any }) {
       return null;
     }
 
+    // Get all selected teeth from all conditions
+    const allSelectedTeeth = {
+      cavity: form.hasCavity === 'yes' ? form.affectedTeeth.cavity : [],
+      rootCanal: form.needsRootCanal === 'yes' ? form.affectedTeeth.rootCanal : [],
+      implant: form.needsImplant === 'yes' ? form.affectedTeeth.implant : [],
+      extraction: form.needsExtraction === 'yes' ? form.affectedTeeth.extraction : [],
+      missing: form.missingTooth === 'yes' ? form.affectedTeeth.missing : [],
+      treated: form.rootTreated === 'yes' ? form.affectedTeeth.treated : [],
+      existingImplant: form.existingImplant === 'yes' ? form.affectedTeeth.existingImplant : [],
+      amalgam: form.hasAmalgam === 'yes' ? form.affectedTeeth.amalgam : [],
+      broken: form.hasBrokenTeeth === 'yes' ? form.affectedTeeth.broken : [],
+      crown: form.hasCrown === 'yes' ? form.affectedTeeth.crown : []
+    };
+
     return (
       <TeethDiagram
         selectedTeeth={form.affectedTeeth[condition]}
@@ -310,6 +324,7 @@ export default function PatientForm({ session }: { session: any }) {
         lowerTeeth={lowerTeeth}
         condition={condition}
         missingTeeth={form.affectedTeeth.missing}
+        allSelectedTeeth={allSelectedTeeth} // Pass all selected teeth to TeethDiagram
       />
     );
   };

@@ -7,38 +7,31 @@ interface ToothShapeProps {
   condition: string;
   isUpper: boolean;
   isMissing: boolean;
+  allSelectedTeeth: {
+    cavity: number[];
+    rootCanal: number[];
+    implant: number[];
+    extraction: number[];
+    missing: number[];
+    treated: number[];
+    existingImplant: number[];
+    amalgam: number[];
+    broken: number[];
+    crown: number[];
+  };
 }
 
-export const ToothShape: React.FC<ToothShapeProps> = ({ 
-  number, 
-  selected, 
-  onClick, 
+export const ToothShape: React.FC<ToothShapeProps> = ({
+  number,
+  selected,
+  onClick,
   condition,
   isUpper,
-  isMissing
+  isMissing,
+  allSelectedTeeth
 }) => {
-  const getConditionStyles = () => {
-    if (!selected) return 'fill-white';
-    
-    switch (condition) {
-      case 'cavity': return 'fill-red-500';
-      case 'rootCanal': return 'fill-blue-500';
-      case 'implant': return 'fill-purple-500';
-      case 'extraction': return 'fill-orange-500';
-      case 'missing': return 'fill-gray-300';
-      case 'treated': return 'fill-green-500';
-      case 'existingImplant': return 'fill-yellow-500';
-      case 'amalgam': return 'fill-indigo-500';
-      case 'broken': return 'fill-pink-500';
-      case 'crown': return 'fill-teal-500';
-      default: return 'fill-white';
-    }
-  };
-
-  const getRingColor = () => {
-    if (!selected) return 'hover:ring-gray-300';
-    
-    switch (condition) {
+  const getConditionColor = (conditionType: string) => {
+    switch (conditionType) {
       case 'cavity': return 'ring-red-500';
       case 'rootCanal': return 'ring-blue-500';
       case 'implant': return 'ring-purple-500';
@@ -49,118 +42,75 @@ export const ToothShape: React.FC<ToothShapeProps> = ({
       case 'amalgam': return 'ring-indigo-500';
       case 'broken': return 'ring-pink-500';
       case 'crown': return 'ring-teal-500';
-      default: return 'ring-indigo-600';
+      default: return '';
     }
   };
 
-  // Check if this is one of the special teeth that uses the molar PNG image
+  const getToothHighlight = () => {
+    if (selected) {
+      return `ring-4 ring-offset-2 ${getConditionColor(condition)}`;
+    }
+    if (allSelectedTeeth.cavity.includes(number)) return `ring-2 ${getConditionColor('cavity')}`;
+    if (allSelectedTeeth.rootCanal.includes(number)) return `ring-2 ${getConditionColor('rootCanal')}`;
+    if (allSelectedTeeth.implant.includes(number)) return `ring-2 ${getConditionColor('implant')}`;
+    if (allSelectedTeeth.extraction.includes(number)) return `ring-2 ${getConditionColor('extraction')}`;
+    if (allSelectedTeeth.missing.includes(number)) return `ring-2 ${getConditionColor('missing')}`;
+    if (allSelectedTeeth.treated.includes(number)) return `ring-2 ${getConditionColor('treated')}`;
+    if (allSelectedTeeth.existingImplant.includes(number)) return `ring-2 ${getConditionColor('existingImplant')}`;
+    if (allSelectedTeeth.amalgam.includes(number)) return `ring-2 ${getConditionColor('amalgam')}`;
+    if (allSelectedTeeth.broken.includes(number)) return `ring-2 ${getConditionColor('broken')}`;
+    if (allSelectedTeeth.crown.includes(number)) return `ring-2 ${getConditionColor('crown')}`;
+    return '';
+  };
+
+  // Check tooth types
   const isMolarTooth = [18, 16, 48, 46, 28, 26, 38, 36].includes(number);
-  
-  // Check if this is one of the teeth that uses the premolar PNG image
   const isPremolarTooth = [14, 24, 34, 44].includes(number);
-  
-  // Check if this is one of the teeth that uses the first premolar PNG image
   const isFirstPremolarTooth = [27, 37, 47, 17].includes(number);
-  
-  // Check if this is one of the teeth that uses the second premolar PNG image
   const isSecondPremolarTooth = [15, 25, 35, 45].includes(number);
-
-  // Check if this is one of the canine teeth that uses the canine PNG image
   const isCanineTooth = [13, 23, 33, 43].includes(number);
-
-  // Check if this is one of the incisor teeth that uses the new PNG image
   const isIncisorTooth = [12, 11, 21, 22, 42, 41, 31, 32].includes(number);
 
   // Determine rotation based on tooth number
   const getRotationClass = () => {
-    // Teeth that need 180-degree rotation
     if ([15, 14, 13, 23, 24, 25, 35, 34, 33, 43, 44, 45, 47, 37, 17, 27].includes(number)) {
       return isUpper ? 'rotate-180' : '';
     }
-    // Lower teeth default rotation
     return isUpper ? '' : 'rotate-180';
   };
 
-  // Determine if the tooth should be disabled
-  const isDiagnosisSection = ['cavity', 'amalgam', 'broken', 'crown', 'existingImplant'].includes(condition);
-  const isDisabled = isMissing && isDiagnosisSection;
-
-  // If the tooth is missing and we're not in the missing section or treatment section, disable it
   const shouldDisable = isMissing && condition !== 'missing' && !['rootCanal', 'implant', 'extraction'].includes(condition);
 
+  const getToothImage = () => {
+    if (isMolarTooth) return "https://i.imgur.com/VHcT1Ac.png";
+    if (isPremolarTooth) return "https://i.imgur.com/67sP1Ws.png";
+    if (isFirstPremolarTooth) return "https://i.imgur.com/neFsMtv.png";
+    if (isSecondPremolarTooth) return "https://i.imgur.com/db6cUGn.png";
+    if (isCanineTooth) return "https://i.imgur.com/UL2pHlK.png";
+    if (isIncisorTooth) return "https://i.imgur.com/FFu224p.png";
+    return "";
+  };
+
   return (
-    <button
-      onClick={onClick}
-      disabled={shouldDisable}
-      className={`w-12 h-16 relative group ${
-        shouldDisable ? 'opacity-50 cursor-not-allowed' : 'transition-transform hover:scale-110'
-      } ${
-        selected ? `ring-2 ${getRingColor()} rounded-lg` : 'hover:ring-2 hover:ring-gray-300 rounded-lg'
-      }`}
-    >
-      {isMolarTooth ? (
-        <div className={`w-full h-full ${getRotationClass()}`}>
+    <div className="relative w-10 h-14">
+      <button
+        onClick={onClick}
+        disabled={shouldDisable}
+        className={`
+          absolute inset-0 z-10
+          ${getToothHighlight()}
+          ${shouldDisable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+          rounded-lg transition-all duration-200
+        `}
+      >
+        <div className={`relative w-full h-full ${getRotationClass()}`}>
           <img 
-            src="https://i.imgur.com/VHcT1Ac.png"
+            src={getToothImage()}
             alt={`Tooth ${number}`}
-            className={`w-full h-full object-contain ${selected ? 'opacity-75' : ''} ${getConditionStyles()}`}
+            className="w-full h-full object-contain"
           />
         </div>
-      ) : isPremolarTooth ? (
-        <div className={`w-full h-full ${getRotationClass()}`}>
-          <img 
-            src="https://i.imgur.com/67sP1Ws.png"
-            alt={`Tooth ${number}`}
-            className={`w-full h-full object-contain ${selected ? 'opacity-75' : ''} ${getConditionStyles()}`}
-          />
-        </div>
-      ) : isFirstPremolarTooth ? (
-        <div className={`w-full h-full ${getRotationClass()}`}>
-          <img 
-            src="https://i.imgur.com/neFsMtv.png"
-            alt={`Tooth ${number}`}
-            className={`w-full h-full object-contain ${selected ? 'opacity-75' : ''} ${getConditionStyles()}`}
-          />
-        </div>
-      ) : isSecondPremolarTooth ? (
-        <div className={`w-full h-full ${getRotationClass()}`}>
-          <img 
-            src="https://i.imgur.com/db6cUGn.png"
-            alt={`Tooth ${number}`}
-            className={`w-full h-full object-contain ${selected ? 'opacity-75' : ''} ${getConditionStyles()}`}
-          />
-        </div>
-      ) : isCanineTooth ? (
-        <div className={`w-full h-full ${getRotationClass()}`}>
-          <img 
-            src="https://i.imgur.com/UL2pHlK.png"
-            alt={`Tooth ${number}`}
-            className={`w-full h-full object-contain ${selected ? 'opacity-75' : ''} ${getConditionStyles()}`}
-          />
-        </div>
-      ) : isIncisorTooth ? (
-        <div className={`w-full h-full ${getRotationClass()}`}>
-          <img 
-            src="https://i.imgur.com/FFu224p.png"
-            alt={`Tooth ${number}`}
-            className={`w-full h-full object-contain ${selected ? 'opacity-75' : ''} ${getConditionStyles()}`}
-          />
-        </div>
-      ) : (
-        <svg
-          viewBox="0 0 100 100"
-          className="w-full h-full"
-        >
-          <path
-            d="M50,10 C70,10 80,20 80,40 L80,70 C80,90 70,95 50,95 C30,95 20,90 20,70 L20,40 C20,20 30,10 50,10 Z"
-            className={`${getConditionStyles()} stroke-gray-400`}
-            strokeWidth="2"
-          />
-        </svg>
-      )}
-      <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs font-medium">
-        {number}
-      </span>
-    </button>
+      </button>
+    </div>
   );
 };
