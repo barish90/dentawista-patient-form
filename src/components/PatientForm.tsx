@@ -6,6 +6,7 @@ import { TeethDiagram } from "./TeethDiagram";
 import { ImageUploader } from "./ImageUploader";
 import { v4 as uuidv4 } from "uuid";
 import { ImageViewer } from "./ImageViewer";
+import { SuccessAnimation } from "./SuccessAnimation";
 
 interface PatientForm {
   name: string;
@@ -114,6 +115,7 @@ export default function PatientForm({ session }: { session: any }) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
 
   React.useEffect(() => {
     if (session?.user?.user_metadata) {
@@ -384,7 +386,7 @@ export default function PatientForm({ session }: { session: any }) {
       if (form.images?.length === 0 && previewImage) {
         setMessage({
           type: "error",
-          text: "Please wait for image upload to complete before submitting",
+          text: "Lütfen görüntü yüklemesinin tamamlanmasını bekleyin",
         });
         return;
       }
@@ -417,21 +419,26 @@ export default function PatientForm({ session }: { session: any }) {
 
       if (error) throw error;
 
-      setMessage({
-        type: "success",
-        text: "Hasta bilgileri başarıyla kaydedildi!",
-      });
-      setForm(initialForm);
-      setPreviewImage(null);
-      setScale(1);
-      setPosition({ x: 0, y: 0 });
+      setShowSuccessAnimation(true);
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error
           ? error.message
-          : "An error occurred while saving patient data";
+          : "Hasta verilerini kaydederken bir hata oluştu";
       setMessage({ type: "error", text: errorMessage });
     }
+  };
+
+  const handleAnimationComplete = () => {
+    setShowSuccessAnimation(false);
+    setMessage({
+      type: "success",
+      text: "Hasta bilgileri başarıyla kaydedildi!",
+    });
+    setForm(initialForm);
+    setPreviewImage(null);
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
   };
 
   const handleZoomIn = () => {
@@ -465,9 +472,15 @@ export default function PatientForm({ session }: { session: any }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-12 px-4 sm:px-6 lg:px-8">
+      {showSuccessAnimation && (
+        <SuccessAnimation onComplete={handleAnimationComplete} />
+      )}
       <div className="max-w-2xl mx-auto">
         <div className="flex justify-between items-center mb-4">
-          <div className="text-sm text-gray-600">Giriş yapan: {userName}</div>
+          <div className="flex items-center text-sm text-gray-600">
+            <User className="h-5 w-5 mr-2 text-gray-400" />
+            {userName}
+          </div>
           <button
             onClick={handleSignOut}
             className="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center"
