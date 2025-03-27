@@ -1,5 +1,5 @@
-import React from 'react';
-import { ToothShape } from './ToothShape';
+import React from "react";
+import { ToothShape } from "./ToothShape";
 
 interface TeethDiagramProps {
   selectedTeeth: number[];
@@ -20,6 +20,7 @@ interface TeethDiagramProps {
     broken: number[];
     crown: number[];
   };
+  shouldDisableTooth: (toothNumber: number) => boolean;
 }
 
 export const TeethDiagram: React.FC<TeethDiagramProps> = ({
@@ -29,14 +30,15 @@ export const TeethDiagram: React.FC<TeethDiagramProps> = ({
   lowerTeeth,
   condition,
   missingTeeth,
-  allSelectedTeeth
+  allSelectedTeeth,
+  shouldDisableTooth,
 }) => {
   return (
     <div className="mt-4 p-6 bg-gray-50 rounded-lg">
       <div className="flex flex-col gap-12">
         {/* Upper teeth row */}
         <div className="flex justify-center gap-1">
-          {upperTeeth.map(tooth => (
+          {upperTeeth.map((tooth) => (
             <ToothShape
               key={tooth}
               number={tooth}
@@ -46,13 +48,14 @@ export const TeethDiagram: React.FC<TeethDiagramProps> = ({
               isUpper={true}
               isMissing={missingTeeth.includes(tooth)}
               allSelectedTeeth={allSelectedTeeth}
+              shouldDisableTooth={shouldDisableTooth}
             />
           ))}
         </div>
 
         {/* Lower teeth row */}
         <div className="flex justify-center gap-1">
-          {lowerTeeth.map(tooth => (
+          {lowerTeeth.map((tooth) => (
             <ToothShape
               key={tooth}
               number={tooth}
@@ -62,6 +65,7 @@ export const TeethDiagram: React.FC<TeethDiagramProps> = ({
               isUpper={false}
               isMissing={missingTeeth.includes(tooth)}
               allSelectedTeeth={allSelectedTeeth}
+              shouldDisableTooth={shouldDisableTooth}
             />
           ))}
         </div>

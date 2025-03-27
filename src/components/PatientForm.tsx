@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { User, Calendar, Plus, X, LogOut, Minus } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import { TeethDiagram } from './TeethDiagram';
-import { ImageUploader } from './ImageUploader';
-import { v4 as uuidv4 } from 'uuid';
-import { ImageViewer } from './ImageViewer';
+import React, { useState, useEffect } from "react";
+import { User, Calendar, Plus, X, LogOut, Minus } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabase";
+import { TeethDiagram } from "./TeethDiagram";
+import { ImageUploader } from "./ImageUploader";
+import { v4 as uuidv4 } from "uuid";
+import { ImageViewer } from "./ImageViewer";
 
 interface PatientForm {
   name: string;
@@ -53,26 +53,26 @@ interface PatientFormData {
 
 interface FileUpload {
   path: string;
-  type: 'image' | 'model';
+  type: "image" | "model";
   originalName: string;
   url?: string;
 }
 
 const initialForm: PatientForm = {
-  name: '',
-  gender: '',
-  dateOfBirth: '',
+  name: "",
+  gender: "",
+  dateOfBirth: "",
   medicines: [],
-  hasCavity: '',
-  needsRootCanal: '',
-  needsImplant: '',
-  needsExtraction: '',
-  missingTooth: '',
-  rootTreated: '',
-  existingImplant: '',
-  hasAmalgam: '',
-  hasBrokenTeeth: '',
-  hasCrown: '',
+  hasCavity: "",
+  needsRootCanal: "",
+  needsImplant: "",
+  needsExtraction: "",
+  missingTooth: "",
+  rootTreated: "",
+  existingImplant: "",
+  hasAmalgam: "",
+  hasBrokenTeeth: "",
+  hasCrown: "",
   affectedTeeth: {
     cavity: [],
     rootCanal: [],
@@ -83,25 +83,32 @@ const initialForm: PatientForm = {
     existingImplant: [],
     amalgam: [],
     broken: [],
-    crown: []
+    crown: [],
   },
   medicalConditions: [],
   previousSurgeries: [],
-  allergies: []
+  allergies: [],
 };
 
-const upperTeeth = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
-const lowerTeeth = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
+const upperTeeth = [
+  18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28,
+];
+const lowerTeeth = [
+  48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38,
+];
 
 export default function PatientForm({ session }: { session: any }) {
   const navigate = useNavigate();
   const [form, setForm] = useState<PatientForm>(initialForm);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [newMedicine, setNewMedicine] = useState('');
-  const [userName, setUserName] = useState('');
-  const [newCondition, setNewCondition] = useState('');
-  const [newSurgery, setNewSurgery] = useState('');
-  const [newAllergy, setNewAllergy] = useState('');
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [newMedicine, setNewMedicine] = useState("");
+  const [userName, setUserName] = useState("");
+  const [newCondition, setNewCondition] = useState("");
+  const [newSurgery, setNewSurgery] = useState("");
+  const [newAllergy, setNewAllergy] = useState("");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -110,133 +117,140 @@ export default function PatientForm({ session }: { session: any }) {
 
   React.useEffect(() => {
     if (session?.user?.user_metadata) {
-      const name = session.user.user_metadata.name || 
-                  session.user.user_metadata.full_name || 
-                  session.user.user_metadata.email;
+      const name =
+        session.user.user_metadata.name ||
+        session.user.user_metadata.full_name ||
+        session.user.user_metadata.email;
       setUserName(name);
     }
   }, [session]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    navigate('/');
+    navigate("/");
   };
 
   const addMedicine = () => {
     if (newMedicine.trim()) {
-      setForm(prev => ({
+      setForm((prev) => ({
         ...prev,
-        medicines: [...prev.medicines, newMedicine.trim()]
+        medicines: [...prev.medicines, newMedicine.trim()],
       }));
-      setNewMedicine('');
+      setNewMedicine("");
     }
   };
 
   const removeMedicine = (index: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
-      medicines: prev.medicines.filter((_, i) => i !== index)
+      medicines: prev.medicines.filter((_, i) => i !== index),
     }));
   };
 
   const addCondition = () => {
     if (newCondition.trim()) {
-      setForm(prev => ({
+      setForm((prev) => ({
         ...prev,
-        medicalConditions: [...prev.medicalConditions, newCondition.trim()]
+        medicalConditions: [...prev.medicalConditions, newCondition.trim()],
       }));
-      setNewCondition('');
+      setNewCondition("");
     }
   };
 
   const removeCondition = (index: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
-      medicalConditions: prev.medicalConditions.filter((_, i) => i !== index)
+      medicalConditions: prev.medicalConditions.filter((_, i) => i !== index),
     }));
   };
 
   const addSurgery = () => {
     if (newSurgery.trim()) {
-      setForm(prev => ({
+      setForm((prev) => ({
         ...prev,
-        previousSurgeries: [...prev.previousSurgeries, newSurgery.trim()]
+        previousSurgeries: [...prev.previousSurgeries, newSurgery.trim()],
       }));
-      setNewSurgery('');
+      setNewSurgery("");
     }
   };
 
   const removeSurgery = (index: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
-      previousSurgeries: prev.previousSurgeries.filter((_, i) => i !== index)
+      previousSurgeries: prev.previousSurgeries.filter((_, i) => i !== index),
     }));
   };
 
   const addAllergy = () => {
     if (newAllergy.trim()) {
-      setForm(prev => ({
+      setForm((prev) => ({
         ...prev,
-        allergies: [...prev.allergies, newAllergy.trim()]
+        allergies: [...prev.allergies, newAllergy.trim()],
       }));
-      setNewAllergy('');
+      setNewAllergy("");
     }
   };
 
   const removeAllergy = (index: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
-      allergies: prev.allergies.filter((_, i) => i !== index)
+      allergies: prev.allergies.filter((_, i) => i !== index),
     }));
   };
 
-  const toggleTooth = (tooth: number, condition: keyof PatientForm['affectedTeeth']) => {
-    setForm(prev => {
+  const toggleTooth = (
+    tooth: number,
+    condition: keyof PatientForm["affectedTeeth"]
+  ) => {
+    setForm((prev) => {
       const teeth = prev.affectedTeeth[condition];
       const newTeeth = teeth.includes(tooth)
-        ? teeth.filter(t => t !== tooth)
+        ? teeth.filter((t) => t !== tooth)
         : [...teeth, tooth];
-      
+
       return {
         ...prev,
         affectedTeeth: {
           ...prev.affectedTeeth,
-          [condition]: newTeeth
-        }
+          [condition]: newTeeth,
+        },
       };
     });
   };
 
-  const handleFileUpload = async (file: File, type: 'image' | 'model'): Promise<FileUpload | null> => {
+  const handleFileUpload = async (
+    file: File,
+    type: "image" | "model"
+  ): Promise<FileUpload | null> => {
     try {
-      const fileExt = file.name.split('.').pop();
+      const fileExt = file.name.split(".").pop();
       const fileName = `${Date.now()}_${uuidv4()}.${fileExt}`;
-      const bucketName = type === 'image' ? 'xray-images' : 'model-files';
+      const bucketName = type === "image" ? "xray-images" : "model-files";
 
       const { data, error: uploadError } = await supabase.storage
         .from(bucketName)
         .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: true
+          cacheControl: "3600",
+          upsert: true,
         });
 
       if (uploadError) throw uploadError;
-      if (!data?.path) throw new Error('No path returned from upload');
+      if (!data?.path) throw new Error("No path returned from upload");
 
-      const { data: { publicUrl } } = supabase.storage
-        .from(bucketName)
-        .getPublicUrl(data.path);
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from(bucketName).getPublicUrl(data.path);
 
       return {
         path: data.path,
         type,
         originalName: file.name,
-        url: publicUrl
+        url: publicUrl,
       };
     } catch (error) {
-      setMessage({ 
-        type: 'error', 
-        text: error instanceof Error ? error.message : 'Error uploading file' 
+      setMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "Error uploading file",
       });
       return null;
     }
@@ -247,28 +261,28 @@ export default function PatientForm({ session }: { session: any }) {
       const previewUrl = URL.createObjectURL(file);
       setPreviewImage(previewUrl);
 
-      const upload = await handleFileUpload(file, 'image');
+      const upload = await handleFileUpload(file, "image");
       if (upload) {
-        setForm(prev => ({
+        setForm((prev) => ({
           ...prev,
-          images: [...(prev.images || []), upload.path]
+          images: [...(prev.images || []), upload.path],
         }));
       }
     } catch (error) {
-      console.error('Error handling image selection:', error);
+      console.error("Error handling image selection:", error);
       setMessage({
-        type: 'error',
-        text: 'Failed to upload image. Please try again.'
+        type: "error",
+        text: "Failed to upload image. Please try again.",
       });
     }
   };
 
   const handleModelSelect = async (file: File) => {
-    const upload = await handleFileUpload(file, 'model');
+    const upload = await handleFileUpload(file, "model");
     if (upload) {
-      setForm(prev => ({
+      setForm((prev) => ({
         ...prev,
-        model_files: [...(prev.model_files || []), upload.path]
+        model_files: [...(prev.model_files || []), upload.path],
       }));
     }
   };
@@ -281,20 +295,35 @@ export default function PatientForm({ session }: { session: any }) {
     };
   }, [previewImage]);
 
-  const TeethSelector = ({ condition }: { condition: keyof PatientForm['affectedTeeth'] }) => {
+  const TeethSelector = ({
+    condition,
+  }: {
+    condition: keyof PatientForm["affectedTeeth"];
+  }) => {
     const showSelector = () => {
       switch (condition) {
-        case 'cavity': return form.hasCavity === 'yes';
-        case 'rootCanal': return form.needsRootCanal === 'yes';
-        case 'implant': return form.needsImplant === 'yes';
-        case 'extraction': return form.needsExtraction === 'yes';
-        case 'missing': return form.missingTooth === 'yes';
-        case 'treated': return form.rootTreated === 'yes';
-        case 'existingImplant': return form.existingImplant === 'yes';
-        case 'amalgam': return form.hasAmalgam === 'yes';
-        case 'broken': return form.hasBrokenTeeth === 'yes';
-        case 'crown': return form.hasCrown === 'yes';
-        default: return false;
+        case "cavity":
+          return form.hasCavity === "yes";
+        case "rootCanal":
+          return form.needsRootCanal === "yes";
+        case "implant":
+          return form.needsImplant === "yes";
+        case "extraction":
+          return form.needsExtraction === "yes";
+        case "missing":
+          return form.missingTooth === "yes";
+        case "treated":
+          return form.rootTreated === "yes";
+        case "existingImplant":
+          return form.existingImplant === "yes";
+        case "amalgam":
+          return form.hasAmalgam === "yes";
+        case "broken":
+          return form.hasBrokenTeeth === "yes";
+        case "crown":
+          return form.hasCrown === "yes";
+        default:
+          return false;
       }
     };
 
@@ -304,16 +333,34 @@ export default function PatientForm({ session }: { session: any }) {
 
     // Get all selected teeth from all conditions
     const allSelectedTeeth = {
-      cavity: form.hasCavity === 'yes' ? form.affectedTeeth.cavity : [],
-      rootCanal: form.needsRootCanal === 'yes' ? form.affectedTeeth.rootCanal : [],
-      implant: form.needsImplant === 'yes' ? form.affectedTeeth.implant : [],
-      extraction: form.needsExtraction === 'yes' ? form.affectedTeeth.extraction : [],
-      missing: form.missingTooth === 'yes' ? form.affectedTeeth.missing : [],
-      treated: form.rootTreated === 'yes' ? form.affectedTeeth.treated : [],
-      existingImplant: form.existingImplant === 'yes' ? form.affectedTeeth.existingImplant : [],
-      amalgam: form.hasAmalgam === 'yes' ? form.affectedTeeth.amalgam : [],
-      broken: form.hasBrokenTeeth === 'yes' ? form.affectedTeeth.broken : [],
-      crown: form.hasCrown === 'yes' ? form.affectedTeeth.crown : []
+      cavity: form.hasCavity === "yes" ? form.affectedTeeth.cavity : [],
+      rootCanal:
+        form.needsRootCanal === "yes" ? form.affectedTeeth.rootCanal : [],
+      implant: form.needsImplant === "yes" ? form.affectedTeeth.implant : [],
+      extraction:
+        form.needsExtraction === "yes" ? form.affectedTeeth.extraction : [],
+      missing: form.missingTooth === "yes" ? form.affectedTeeth.missing : [],
+      treated: form.rootTreated === "yes" ? form.affectedTeeth.treated : [],
+      existingImplant:
+        form.existingImplant === "yes"
+          ? form.affectedTeeth.existingImplant
+          : [],
+      amalgam: form.hasAmalgam === "yes" ? form.affectedTeeth.amalgam : [],
+      broken: form.hasBrokenTeeth === "yes" ? form.affectedTeeth.broken : [],
+      crown: form.hasCrown === "yes" ? form.affectedTeeth.crown : [],
+    };
+
+    // Function to check if a tooth should be disabled
+    const shouldDisableTooth = (toothNumber: number) => {
+      const isMissing = form.affectedTeeth.missing.includes(toothNumber);
+
+      // If the current condition is 'implant', don't disable missing teeth
+      if (condition === "implant") {
+        return false;
+      }
+
+      // For all other conditions, disable if the tooth is marked as missing
+      return isMissing;
     };
 
     return (
@@ -324,19 +371,20 @@ export default function PatientForm({ session }: { session: any }) {
         lowerTeeth={lowerTeeth}
         condition={condition}
         missingTeeth={form.affectedTeeth.missing}
-        allSelectedTeeth={allSelectedTeeth} // Pass all selected teeth to TeethDiagram
+        allSelectedTeeth={allSelectedTeeth}
+        shouldDisableTooth={shouldDisableTooth}
       />
     );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       if (form.images?.length === 0 && previewImage) {
-        setMessage({ 
-          type: 'error', 
-          text: 'Please wait for image upload to complete before submitting' 
+        setMessage({
+          type: "error",
+          text: "Please wait for image upload to complete before submitting",
         });
         return;
       }
@@ -350,60 +398,64 @@ export default function PatientForm({ session }: { session: any }) {
         previous_surgeries: form.previousSurgeries,
         allergies: form.allergies,
         affected_teeth: form.affectedTeeth,
-        has_cavity: form.hasCavity === 'yes',
-        needs_root_canal: form.needsRootCanal === 'yes',
-        needs_implant: form.needsImplant === 'yes',
-        needs_extraction: form.needsExtraction === 'yes',
-        missing_tooth: form.missingTooth === 'yes',
-        root_treated: form.rootTreated === 'yes',
-        existing_implant: form.existingImplant === 'yes',
-        has_amalgam: form.hasAmalgam === 'yes',
-        has_broken_teeth: form.hasBrokenTeeth === 'yes',
-        has_crown: form.hasCrown === 'yes',
+        has_cavity: form.hasCavity === "yes",
+        needs_root_canal: form.needsRootCanal === "yes",
+        needs_implant: form.needsImplant === "yes",
+        needs_extraction: form.needsExtraction === "yes",
+        missing_tooth: form.missingTooth === "yes",
+        root_treated: form.rootTreated === "yes",
+        existing_implant: form.existingImplant === "yes",
+        has_amalgam: form.hasAmalgam === "yes",
+        has_broken_teeth: form.hasBrokenTeeth === "yes",
+        has_crown: form.hasCrown === "yes",
         images: form.images || [],
         model_files: form.model_files || [],
-        submitted_by_id: session.user.id
+        submitted_by_id: session.user.id,
       };
 
-      const { error } = await supabase
-        .from('patients')
-        .insert([patientData]);
+      const { error } = await supabase.from("patients").insert([patientData]);
 
       if (error) throw error;
-      
-      setMessage({ type: 'success', text: 'Patient data saved successfully!' });
+
+      setMessage({
+        type: "success",
+        text: "Hasta bilgileri başarıyla kaydedildi!",
+      });
       setForm(initialForm);
       setPreviewImage(null);
       setScale(1);
       setPosition({ x: 0, y: 0 });
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred while saving patient data';
-      setMessage({ type: 'error', text: errorMessage });
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "An error occurred while saving patient data";
+      setMessage({ type: "error", text: errorMessage });
     }
   };
 
   const handleZoomIn = () => {
-    setScale(prev => Math.min(prev + 0.25, 3));
+    setScale((prev) => Math.min(prev + 0.25, 3));
   };
 
   const handleZoomOut = () => {
-    setScale(prev => Math.max(prev - 0.25, 0.5));
+    setScale((prev) => Math.max(prev - 0.25, 0.5));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     setDragStart({
       x: e.clientX - position.x,
-      y: e.clientY - position.y
+      y: e.clientY - position.y,
     });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
-    
+
     setPosition({
       x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y
+      y: e.clientY - dragStart.y,
     });
   };
 
@@ -415,46 +467,62 @@ export default function PatientForm({ session }: { session: any }) {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
         <div className="flex justify-between items-center mb-4">
-          <div className="text-sm text-gray-600">
-            Logged in as: {userName}
-          </div>
+          <div className="text-sm text-gray-600">Giriş yapan: {userName}</div>
           <button
             onClick={handleSignOut}
             className="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center"
           >
             <LogOut className="h-5 w-5 mr-2" />
-            Sign Out
+            Çıkış Yap
           </button>
         </div>
 
         <div className="text-center mb-12">
           <div className="flex justify-center mb-4">
-            <img 
-              src="https://i.imgur.com/umOU4WN.png" 
-              alt="DentaWista Logo" 
+            <img
+              src="https://i.imgur.com/umOU4WN.png"
+              alt="DentaWista Logo"
               className="h-20 w-auto"
             />
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">DentaWista Patient Form</h1>
-          <p className="text-lg text-gray-600">Please fill in the patient's dental information</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            DentaWista Hasta Formu
+          </h1>
+          <p className="text-lg text-gray-600">
+            Lütfen hastanın diş bilgilerini doldurun
+          </p>
         </div>
 
         {message && (
-          <div className={`mb-6 p-4 rounded-md ${
-            message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-          }`}>
-            {message.text}
+          <div
+            className={`mb-6 p-4 rounded-md ${
+              message.type === "success"
+                ? "bg-green-50 text-green-800"
+                : "bg-red-50 text-red-800"
+            }`}
+          >
+            {message.type === "success"
+              ? "Hasta bilgileri başarıyla kaydedildi!"
+              : message.text}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="bg-white shadow-xl rounded-lg px-8 pt-6 pb-8 mb-4">
-          {/* Patient Information Section */}
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white shadow-xl rounded-lg px-8 pt-6 pb-8 mb-4"
+        >
+          {/* Hasta Bilgileri Bölümü */}
           <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">Patient Information</h2>
-            
+            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">
+              Hasta Bilgileri
+            </h2>
+
             <div>
-              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="name">
-                Patient's Name
+              <label
+                className="block text-gray-700 text-sm font-bold mb-2"
+                htmlFor="name"
+              >
+                Hasta Adı
               </label>
               <div className="flex items-center">
                 <User className="h-5 w-5 text-gray-400 mr-2" />
@@ -465,13 +533,14 @@ export default function PatientForm({ session }: { session: any }) {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  placeholder="Hasta adını giriniz"
                 />
               </div>
             </div>
 
             <div>
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Gender
+                Cinsiyet
               </label>
               <div className="flex gap-4">
                 <label className="flex items-center">
@@ -479,40 +548,46 @@ export default function PatientForm({ session }: { session: any }) {
                     type="radio"
                     required
                     value="male"
-                    checked={form.gender === 'male'}
-                    onChange={(e) => setForm({ ...form, gender: e.target.value })}
+                    checked={form.gender === "male"}
+                    onChange={(e) =>
+                      setForm({ ...form, gender: e.target.value })
+                    }
                     className="mr-2"
                   />
-                  Male
+                  Erkek
                 </label>
                 <label className="flex items-center">
                   <input
                     type="radio"
                     required
                     value="female"
-                    checked={form.gender === 'female'}
-                    onChange={(e) => setForm({ ...form, gender: e.target.value })}
+                    checked={form.gender === "female"}
+                    onChange={(e) =>
+                      setForm({ ...form, gender: e.target.value })
+                    }
                     className="mr-2"
                   />
-                  Female
+                  Kadın
                 </label>
                 <label className="flex items-center">
                   <input
                     type="radio"
                     required
                     value="other"
-                    checked={form.gender === 'other'}
-                    onChange={(e) => setForm({ ...form, gender: e.target.value })}
+                    checked={form.gender === "other"}
+                    onChange={(e) =>
+                      setForm({ ...form, gender: e.target.value })
+                    }
                     className="mr-2"
                   />
-                  Other
+                  Diğer
                 </label>
               </div>
             </div>
 
             <div>
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Date of Birth
+                Doğum Tarihi
               </label>
               <div className="flex items-center">
                 <Calendar className="h-5 w-5 text-gray-400 mr-2" />
@@ -520,7 +595,9 @@ export default function PatientForm({ session }: { session: any }) {
                   type="date"
                   required
                   value={form.dateOfBirth}
-                  onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, dateOfBirth: e.target.value })
+                  }
                   className="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                 />
               </div>
@@ -528,7 +605,7 @@ export default function PatientForm({ session }: { session: any }) {
 
             <div>
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Current Medication
+                Kullanılan İlaçlar
               </label>
               <div className="flex gap-2 mb-2">
                 <input
@@ -536,7 +613,7 @@ export default function PatientForm({ session }: { session: any }) {
                   value={newMedicine}
                   onChange={(e) => setNewMedicine(e.target.value)}
                   className="shadow border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="Enter medication"
+                  placeholder="İlaç adını giriniz"
                 />
                 <button
                   type="button"
@@ -548,7 +625,10 @@ export default function PatientForm({ session }: { session: any }) {
               </div>
               <div className="space-y-2">
                 {form.medicines.map((medicine, index) => (
-                  <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                  >
                     <span>{medicine}</span>
                     <button
                       type="button"
@@ -564,7 +644,7 @@ export default function PatientForm({ session }: { session: any }) {
 
             <div>
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Medical Conditions
+                Sağlık Durumu
               </label>
               <div className="flex gap-2 mb-2">
                 <input
@@ -572,7 +652,7 @@ export default function PatientForm({ session }: { session: any }) {
                   value={newCondition}
                   onChange={(e) => setNewCondition(e.target.value)}
                   className="shadow border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="Enter medical condition"
+                  placeholder="Sağlık durumunu giriniz"
                 />
                 <button
                   type="button"
@@ -584,7 +664,10 @@ export default function PatientForm({ session }: { session: any }) {
               </div>
               <div className="space-y-2">
                 {form.medicalConditions.map((condition, index) => (
-                  <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                  >
                     <span>{condition}</span>
                     <button
                       type="button"
@@ -600,7 +683,7 @@ export default function PatientForm({ session }: { session: any }) {
 
             <div>
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Previous Surgeries
+                Geçirilen Ameliyatlar
               </label>
               <div className="flex gap-2 mb-2">
                 <input
@@ -608,7 +691,7 @@ export default function PatientForm({ session }: { session: any }) {
                   value={newSurgery}
                   onChange={(e) => setNewSurgery(e.target.value)}
                   className="shadow border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="Enter previous surgery"
+                  placeholder="Ameliyat bilgisini giriniz"
                 />
                 <button
                   type="button"
@@ -620,7 +703,10 @@ export default function PatientForm({ session }: { session: any }) {
               </div>
               <div className="space-y-2">
                 {form.previousSurgeries.map((surgery, index) => (
-                  <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                  >
                     <span>{surgery}</span>
                     <button
                       type="button"
@@ -636,7 +722,7 @@ export default function PatientForm({ session }: { session: any }) {
 
             <div>
               <label className="block text-gray-700 text-sm font-bold mb-2">
-                Allergies
+                Alerjiler
               </label>
               <div className="flex gap-2 mb-2">
                 <input
@@ -644,7 +730,7 @@ export default function PatientForm({ session }: { session: any }) {
                   value={newAllergy}
                   onChange={(e) => setNewAllergy(e.target.value)}
                   className="shadow border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="Enter allergy"
+                  placeholder="Alerji bilgisini giriniz"
                 />
                 <button
                   type="button"
@@ -656,7 +742,10 @@ export default function PatientForm({ session }: { session: any }) {
               </div>
               <div className="space-y-2">
                 {form.allergies.map((allergy, index) => (
-                  <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                  >
                     <span>{allergy}</span>
                     <button
                       type="button"
@@ -671,22 +760,28 @@ export default function PatientForm({ session }: { session: any }) {
             </div>
           </div>
 
-          {/* X-Ray Images Section */}
+          {/* X-Ray Görüntüleri Bölümü */}
           <div className="space-y-6 mt-8">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">X-Ray Images</h2>
+            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">
+              X-Ray Görüntüleri
+            </h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">X-Ray Images</label>
+                <label className="block text-sm font-medium text-gray-700">
+                  X-Ray Görüntüleri
+                </label>
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => e.target.files?.[0] && handleImageSelect(e.target.files[0])}
+                  onChange={(e) =>
+                    e.target.files?.[0] && handleImageSelect(e.target.files[0])
+                  }
                   className="mt-1 block w-full"
                 />
-                
+
                 {previewImage && (
                   <div className="mt-4 relative">
-                    <div 
+                    <div
                       className="relative w-full h-64 border rounded-lg overflow-hidden bg-gray-100"
                       onMouseDown={handleMouseDown}
                       onMouseMove={handleMouseMove}
@@ -699,8 +794,8 @@ export default function PatientForm({ session }: { session: any }) {
                         className="w-full h-full object-contain select-none"
                         style={{
                           transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                          transition: isDragging ? 'none' : 'transform 0.1s',
-                          cursor: isDragging ? 'grabbing' : 'grab'
+                          transition: isDragging ? "none" : "transform 0.1s",
+                          cursor: isDragging ? "grabbing" : "grab",
                         }}
                         draggable={false}
                       />
@@ -735,27 +830,33 @@ export default function PatientForm({ session }: { session: any }) {
                   </div>
                 )}
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-700">3D Models (.obj, .ply)</label>
+                <label className="block text-sm font-medium text-gray-700">
+                  3D Modeller (.obj, .ply)
+                </label>
                 <input
                   type="file"
                   accept=".obj,.ply"
-                  onChange={(e) => e.target.files?.[0] && handleModelSelect(e.target.files[0])}
+                  onChange={(e) =>
+                    e.target.files?.[0] && handleModelSelect(e.target.files[0])
+                  }
                   className="mt-1 block w-full"
                 />
               </div>
             </div>
           </div>
 
-          {/* Diagnosis Section */}
+          {/* Teşhis Bölümü */}
           <div className="space-y-6 mt-8">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">Diagnosis</h2>
-            
+            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">
+              Teşhis
+            </h2>
+
             <div className="space-y-4">
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Missing Tooth
+                  Eksik Diş
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -763,22 +864,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.missingTooth === 'yes'}
-                      onChange={(e) => setForm({ ...form, missingTooth: e.target.value })}
+                      checked={form.missingTooth === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, missingTooth: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.missingTooth === 'no'}
-                      onChange={(e) => setForm({ ...form, missingTooth: e.target.value })}
+                      checked={form.missingTooth === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, missingTooth: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="missing" />
@@ -786,7 +891,7 @@ export default function PatientForm({ session }: { session: any }) {
 
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Root Treated
+                  Kanal Tedavisi Yapılmış
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -794,22 +899,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.rootTreated === 'yes'}
-                      onChange={(e) => setForm({ ...form, rootTreated: e.target.value })}
+                      checked={form.rootTreated === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, rootTreated: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.rootTreated === 'no'}
-                      onChange={(e) => setForm({ ...form, rootTreated: e.target.value })}
+                      checked={form.rootTreated === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, rootTreated: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="treated" />
@@ -817,7 +926,7 @@ export default function PatientForm({ session }: { session: any }) {
 
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Existing Implant
+                  Mevcut İmplant
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -825,22 +934,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.existingImplant === 'yes'}
-                      onChange={(e) => setForm({ ...form, existingImplant: e.target.value })}
+                      checked={form.existingImplant === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, existingImplant: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.existingImplant === 'no'}
-                      onChange={(e) => setForm({ ...form, existingImplant: e.target.value })}
+                      checked={form.existingImplant === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, existingImplant: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="existingImplant" />
@@ -848,7 +961,7 @@ export default function PatientForm({ session }: { session: any }) {
 
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Has Cavity
+                  Çürük Var
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -856,22 +969,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.hasCavity === 'yes'}
-                      onChange={(e) => setForm({ ...form, hasCavity: e.target.value })}
+                      checked={form.hasCavity === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, hasCavity: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.hasCavity === 'no'}
-                      onChange={(e) => setForm({ ...form, hasCavity: e.target.value })}
+                      checked={form.hasCavity === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, hasCavity: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="cavity" />
@@ -879,7 +996,7 @@ export default function PatientForm({ session }: { session: any }) {
 
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Has Amalgam (Filled)
+                  Amalgam Dolgu
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -887,22 +1004,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.hasAmalgam === 'yes'}
-                      onChange={(e) => setForm({ ...form, hasAmalgam: e.target.value })}
+                      checked={form.hasAmalgam === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, hasAmalgam: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.hasAmalgam === 'no'}
-                      onChange={(e) => setForm({ ...form, hasAmalgam: e.target.value })}
+                      checked={form.hasAmalgam === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, hasAmalgam: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="amalgam" />
@@ -910,7 +1031,7 @@ export default function PatientForm({ session }: { session: any }) {
 
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Has Broken Teeth
+                  Kırık Diş
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -918,22 +1039,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.hasBrokenTeeth === 'yes'}
-                      onChange={(e) => setForm({ ...form, hasBrokenTeeth: e.target.value })}
+                      checked={form.hasBrokenTeeth === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, hasBrokenTeeth: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.hasBrokenTeeth === 'no'}
-                      onChange={(e) => setForm({ ...form, hasBrokenTeeth: e.target.value })}
+                      checked={form.hasBrokenTeeth === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, hasBrokenTeeth: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="broken" />
@@ -941,7 +1066,7 @@ export default function PatientForm({ session }: { session: any }) {
 
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Has Crown
+                  Kron
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -949,22 +1074,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.hasCrown === 'yes'}
-                      onChange={(e) => setForm({ ...form, hasCrown: e.target.value })}
+                      checked={form.hasCrown === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, hasCrown: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.hasCrown === 'no'}
-                      onChange={(e) => setForm({ ...form, hasCrown: e.target.value })}
+                      checked={form.hasCrown === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, hasCrown: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="crown" />
@@ -972,14 +1101,16 @@ export default function PatientForm({ session }: { session: any }) {
             </div>
           </div>
 
-          {/* Treatment Section */}
+          {/* Tedavi Bölümü */}
           <div className="space-y-6 mt-8">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">Treatment</h2>
-            
+            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">
+              Tedavi
+            </h2>
+
             <div className="space-y-4">
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Needs Root Canal
+                  Kanal Tedavisi Gerekli
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -987,22 +1118,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.needsRootCanal === 'yes'}
-                      onChange={(e) => setForm({ ...form, needsRootCanal: e.target.value })}
+                      checked={form.needsRootCanal === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, needsRootCanal: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.needsRootCanal === 'no'}
-                      onChange={(e) => setForm({ ...form, needsRootCanal: e.target.value })}
+                      checked={form.needsRootCanal === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, needsRootCanal: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="rootCanal" />
@@ -1010,7 +1145,7 @@ export default function PatientForm({ session }: { session: any }) {
 
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Needs Implant
+                  İmplant Gerekli
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -1018,22 +1153,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.needsImplant === 'yes'}
-                      onChange={(e) => setForm({ ...form, needsImplant: e.target.value })}
+                      checked={form.needsImplant === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, needsImplant: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.needsImplant === 'no'}
-                      onChange={(e) => setForm({ ...form, needsImplant: e.target.value })}
+                      checked={form.needsImplant === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, needsImplant: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="implant" />
@@ -1041,7 +1180,7 @@ export default function PatientForm({ session }: { session: any }) {
 
               <div>
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Needs Extraction
+                  Diş Çekimi Gerekli
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center">
@@ -1049,22 +1188,26 @@ export default function PatientForm({ session }: { session: any }) {
                       type="radio"
                       required
                       value="yes"
-                      checked={form.needsExtraction === 'yes'}
-                      onChange={(e) => setForm({ ...form, needsExtraction: e.target.value })}
+                      checked={form.needsExtraction === "yes"}
+                      onChange={(e) =>
+                        setForm({ ...form, needsExtraction: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    Yes
+                    Evet
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
                       required
                       value="no"
-                      checked={form.needsExtraction === 'no'}
-                      onChange={(e) => setForm({ ...form, needsExtraction: e.target.value })}
+                      checked={form.needsExtraction === "no"}
+                      onChange={(e) =>
+                        setForm({ ...form, needsExtraction: e.target.value })
+                      }
                       className="mr-2"
                     />
-                    No
+                    Hayır
                   </label>
                 </div>
                 <TeethSelector condition="extraction" />
@@ -1077,7 +1220,7 @@ export default function PatientForm({ session }: { session: any }) {
               type="submit"
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
             >
-              Submit
+              Kaydet
             </button>
           </div>
         </form>
