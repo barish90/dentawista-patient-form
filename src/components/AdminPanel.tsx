@@ -1,518 +1,516 @@
-import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { supabase } from '../lib/supabase';
-import { Search, Download, LogOut, UserPlus, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { collection, getDocs, orderBy, query, doc, getDoc, deleteDoc } from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
+import { format, isValid } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import AdminUsers from './AdminUsers';
+import gsap from 'gsap';
+import { Transition } from '@headlessui/react';
+import ConfirmationDialog from './ConfirmationDialog';
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  UserGroupIcon,
+  DocumentTextIcon,
+  ArrowLeftOnRectangleIcon,
+  MagnifyingGlassIcon,
+  UserCircleIcon,
+  ClipboardDocumentListIcon,
+  ShieldCheckIcon,
+  EyeIcon,
+  CubeIcon,
+  TrashIcon
+} from '@heroicons/react/24/outline';
 
 interface Patient {
   id: string;
   name: string;
   gender: string;
-  date_of_birth: string;
-  medicines: string[];
-  medical_conditions: string[];
-  previous_surgeries: string[];
+  dateOfBirth: string;
+  createdAt: string;
+  medicalConditions: string[];
+  previousSurgeries: string[];
   allergies: string[];
-  affected_teeth: Record<string, number[]>;
-  submitted_by_id: string;
-  created_at: string;
-  submitter_name?: string;
-  images?: string[];
-  model_files?: string[];
+  medicines: string[];
+  xrayImage?: string;
+  model_files: string[];
+  hasCavity: boolean;
+  needsRootCanal: boolean;
+  needsImplant: boolean;
+  needsExtraction: boolean;
+  missingTooth: boolean;
+  rootTreated: boolean;
+  existingImplant: boolean;
+  hasAmalgam: boolean;
+  hasBrokenTeeth: boolean;
+  hasCrown: boolean;
+  affectedTeeth?: {
+    cavity?: number[];
+    rootCanal?: number[];
+    implant?: number[];
+    extraction?: number[];
+    missing?: number[];
+    treated?: number[];
+    existingImplant?: number[];
+    amalgam?: number[];
+    broken?: number[];
+    crown?: number[];
+  };
+  submittedBy: string;
+  userId: string;
 }
 
-export default function AdminPanel() {
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [newAdminEmail, setNewAdminEmail] = useState('');
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [expandedPatient, setExpandedPatient] = useState<string | null>(null);
-  const [pageSize, setPageSize] = useState(25);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPatients, setTotalPatients] = useState(0);
-  const navigate = useNavigate();
+const formatDate = (dateString: string) => {
+  try {
+    const date = new Date(dateString);
+    return isValid(date) ? format(date, 'MM/dd/yyyy') : 'Invalid date';
+  } catch {
+    return 'Invalid date';
+  }
+};
 
-  useEffect(() => {
-    fetchPatients();
-  }, [pageSize, currentPage]);
+const conditionIcons: Record<string, string> = {
+  cavity: '/images/dental/dental-cavity.svg',
+  rootCanal: '/images/dental/root-canal.svg',
+  implant: '/images/dental/dental-implant.svg',
+  extraction: '/images/dental/tooth-extraction.svg',
+  missing: '/images/dental/tooth-extraction.svg',
+  treated: '/images/dental/healthy-tooth.svg',
+  existingImplant: '/images/dental/dental-implant.svg',
+  amalgam: '/images/dental/filling.svg',
+  broken: '/images/dental/cracked-tooth.svg',
+  crown: '/images/dental/dental-crown.svg',
+};
+
+const AdminPanel = () => {
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortField, setSortField] = useState<keyof Patient>('createdAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [activeTab, setActiveTab] = useState<'patients' | 'users'>('patients');
+  const [expandedPatient, setExpandedPatient] = useState<string | null>(null);
+  const [userNames, setUserNames] = useState<Record<string, string>>({});
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [patientToDelete, setPatientToDelete] = useState<{ id: string; name: string } | null>(null);
+  const navigate = useNavigate();
+  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const fetchPatients = async () => {
     try {
+      setError('');
       setLoading(true);
-      
-      const { count } = await supabase
-        .from('patients')
-        .select('*', { count: 'exact', head: true });
-      
-      setTotalPatients(count || 0);
+      const patientsRef = collection(db, 'patients');
+      const q = query(patientsRef, orderBy(sortField as string, sortDirection));
+      const querySnapshot = await getDocs(q);
+      const patientsData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Patient[];
 
-      const { data: patients, error: patientsError } = await supabase
-        .from('patients')
-        .select(`
-          *,
-          user_profiles!patients_submitted_by_id_fkey (
-            email,
-            raw_user_meta_data
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
+      const uniqueUserIds = [...new Set(patientsData.map(p => p.userId))];
+      const userNamesMap: Record<string, string> = {};
 
-      if (patientsError) throw patientsError;
+      for (const userId of uniqueUserIds) {
+        if (userId) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              userNamesMap[userId] = userData.displayName || userData.email || 'Unknown User';
+            } else {
+              userNamesMap[userId] = 'Deleted User';
+            }
+          } catch (userFetchError) {
+            console.error(`Failed to fetch user ${userId}:`, userFetchError);
+            userNamesMap[userId] = 'Error Fetching User';
+          }
+        }
+      }
 
-      const patientsWithSubmitters = patients?.map(patient => ({
-        ...patient,
-        submitter_name: patient.user_profiles?.raw_user_meta_data?.name || 
-                       patient.user_profiles?.raw_user_meta_data?.full_name ||
-                       patient.user_profiles?.email ||
-                       'Unknown'
-      })) || [];
-
-      setPatients(patientsWithSubmitters);
+      setUserNames(userNamesMap);
+      setPatients(patientsData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred fetching patients');
+      setError('Error fetching patients');
+      console.error('Error fetching patients:', err);
+      setPatients([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate('/');
-  };
-
-  const makeAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const { data, error } = await supabase.rpc('make_user_admin', {
-        user_email: newAdminEmail
-      });
-
-      if (error) throw error;
-      setMessage({ type: 'success', text: `Successfully made ${newAdminEmail} an admin` });
-      setNewAdminEmail('');
-    } catch (error: any) {
-      setMessage({ type: 'error', text: error.message });
+  useEffect(() => {
+    if (activeTab === 'patients') {
+      fetchPatients();
     }
-  };
+  }, [sortField, sortDirection, activeTab]);
 
-  const togglePatientDetails = (patientId: string) => {
-    setExpandedPatient(expandedPatient === patientId ? null : patientId);
-  };
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString();
-  };
-
-  const totalPages = Math.ceil(totalPatients / pageSize);
-
-  const filteredPatients = patients.filter(patient =>
-    patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.submitter_name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const exportToCSV = () => {
-    const headers = [
-      'Name',
-      'Gender',
-      'Date of Birth',
-      'Submitted By',
-      'Submission Date',
-      'Medicines',
-      'Medical Conditions',
-      'Previous Surgeries',
-      'Allergies'
-    ];
-
-    const csvData = filteredPatients.map(patient => [
-      patient.name,
-      patient.gender,
-      patient.date_of_birth,
-      patient.submitter_name || 'N/A',
-      format(new Date(patient.created_at), 'yyyy-MM-dd HH:mm:ss'),
-      patient.medicines.join('; '),
-      patient.medical_conditions.join('; '),
-      patient.previous_surgeries.join('; '),
-      patient.allergies.join('; ')
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `patients_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    link.click();
-  };
-
-  const handlePageSizeChange = async (newSize: number) => {
-    setLoading(true);
-    setPageSize(newSize);
-    setCurrentPage(1);
-    await fetchPatients();
-    setLoading(false);
-  };
-
-  const getFileUrl = async (path: string) => {
-    try {
-      const bucketName = path.startsWith('xray-images/') ? 'xray-images' : 'model-files';
-      const { data } = await supabase.storage
-        .from(bucketName)
-        .createSignedUrl(path, 3600); // URL valid for 1 hour
-
-      return data?.signedUrl;
-    } catch (error) {
-      console.error('Error getting file URL:', error);
-      return null;
-    }
-  };
-
-  const getImageUrl = (path: string) => {
-    try {
-      if (!path) {
-        return null;
+  useEffect(() => {
+    if (!loading && activeTab === 'patients' && cardRefs.current.length > 0) {
+      const visibleCards = cardRefs.current.filter(el => el !== null);
+      if (visibleCards.length > 0) {
+        gsap.from(visibleCards, {
+          duration: 0.5,
+          y: 30,
+          opacity: 0,
+          stagger: 0.05,
+          ease: "power2.out"
+        });
       }
+    }
+  }, [patients, loading, activeTab]);
 
-      if (path.startsWith('http')) {
-        return path;
-      }
-
-      const cleanPath = path.replace(/^xray-images\//, '');
-      const { data: { publicUrl } } = supabase.storage
-        .from('xray-images')
-        .getPublicUrl(cleanPath);
-
-      return publicUrl;
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      navigate('/login');
     } catch (error) {
-      return null;
+      console.error('Error signing out:', error);
     }
   };
 
-  if (loading) {
-    return <div>Loading patients...</div>;
-  }
-
-  if (error) {
-    return (
-      <div className="p-4">
-        <div className="bg-red-50 border border-red-200 rounded p-4">
-          <h2 className="text-red-800 font-medium">Error</h2>
-          <p className="text-red-600">{error}</p>
-        </div>
-      </div>
+  const filteredPatients = patients.filter(patient => {
+    const searchableValues = Object.values(patient || {}).filter(value => value !== null && value !== undefined);
+    return searchableValues.some(value =>
+      value.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }
+  });
+
+  const togglePatientExpansion = (patientId: string) => {
+    setExpandedPatient(prev => (prev === patientId ? null : patientId));
+  };
+
+  const openDeleteConfirmation = (patientId: string, patientName: string) => {
+    setPatientToDelete({ id: patientId, name: patientName });
+    setIsConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!patientToDelete) return;
+
+    const { id: patientId, name: patientName } = patientToDelete;
+
+    try {
+      setError('');
+      setSuccess('');
+      const patientRef = doc(db, 'patients', patientId);
+      await deleteDoc(patientRef);
+
+      setPatients(prevPatients => prevPatients.filter(p => p.id !== patientId));
+
+      setSuccess(`Successfully deleted patient record for ${patientName}.`);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error("Error deleting patient:", err);
+      setError("Failed to delete patient record. Please try again.");
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setPatientToDelete(null);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center">
-              <img
-                src="https://i.imgur.com/umOU4WN.png"
-                alt="DentaWista Logo"
-                className="h-8 w-auto"
-              />
-              <h1 className="ml-4 text-xl font-semibold text-gray-900">Admin Panel</h1>
-            </div>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
+          </div>
+          <div className="flex items-center space-x-3">
             <button
-              onClick={handleSignOut}
-              className="flex items-center text-gray-600 hover:text-gray-900"
+              onClick={handleLogout}
+              className="flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
             >
-              <LogOut className="h-5 w-5 mr-2" />
-              Sign Out
+              <ArrowLeftOnRectangleIcon className="h-5 w-5 mr-2" />
+              Logout
             </button>
           </div>
         </div>
-      </nav>
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Patient List</h1>
-          <button
-            onClick={() => navigate('/')}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-          >
-            Back to Main Page
-          </button>
+        <div className="mb-8">
+          <nav className="flex space-x-8 border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab('patients')}
+              className={`${activeTab === 'patients'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+            >
+              <DocumentTextIcon className="h-5 w-5 mr-2" />
+              Patient Records
+            </button>
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`${activeTab === 'users'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+            >
+              <UserGroupIcon className="h-5 w-5 mr-2" />
+              Manage Users
+            </button>
+          </nav>
         </div>
 
-        {/* Add Admin Form */}
-        <div className="mb-8 bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-4">Add New Admin</h2>
-          {message && (
-            <div className={`mb-4 p-4 rounded-md ${
-              message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-            }`}>
-              {message.text}
+        {error && (
+          <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-lg">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
             </div>
-          )}
-          <form onSubmit={makeAdmin} className="flex gap-4">
-            <div className="flex-1">
-              <input
-                type="email"
-                value={newAdminEmail}
-                onChange={(e) => setNewAdminEmail(e.target.value)}
-                placeholder="Enter user email"
-                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-            <button
-              type="submit"
-              className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-            >
-              <UserPlus className="h-5 w-5 mr-2" />
-              Make Admin
-            </button>
-          </form>
-        </div>
-
-        <div className="px-4 py-6 sm:px-0">
-          <div className="flex justify-between items-center mb-6">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-              <input
-                type="text"
-                placeholder="Search by patient name or submitter..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-            <button
-              onClick={exportToCSV}
-              className="ml-4 flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-            >
-              <Download className="h-5 w-5 mr-2" />
-              Export to CSV
-            </button>
           </div>
+        )}
+        {success && (
+          <div className="mb-6 bg-green-50 border-l-4 border-green-400 p-4 rounded-lg">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-green-700">{success}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="flex justify-between items-center p-4 border-b">
-              <div className="flex items-center space-x-4">
-                <span>Show</span>
+        {activeTab === 'patients' ? (
+          <div>
+            <div className="mb-6 flex items-center justify-between">
+              <div className="relative flex-1 max-w-md">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search patients..."
+                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                />
+              </div>
+              <div className="flex items-center space-x-4 ml-4">
+                <span className="text-sm font-medium text-gray-500">Sort by:</span>
                 <select
-                  value={pageSize}
-                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                  className="border rounded px-2 py-1"
+                  value={`${sortField}-${sortDirection}`}
+                  onChange={(e) => {
+                    const [field, direction] = e.target.value.split('-');
+                    setSortField(field as keyof Patient);
+                    setSortDirection(direction as 'asc' | 'desc');
+                  }}
+                  className="text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
                 >
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
+                  <option value="createdAt-desc">Date Submitted (Newest)</option>
+                  <option value="createdAt-asc">Date Submitted (Oldest)</option>
+                  <option value="name-asc">Name (A-Z)</option>
+                  <option value="name-desc">Name (Z-A)</option>
                 </select>
-                <span>entries</span>
-              </div>
-              <div>
-                Total Patients: {totalPatients}
               </div>
             </div>
 
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Gender
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date of Birth
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Submitted By
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date Added
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center">
-                      <div className="flex justify-center items-center space-x-2">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
-                        <span>Loading patients...</span>
+            {loading ? (
+              <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6">
+                {filteredPatients.map((patient, index) => (
+                  <div
+                    key={patient.id}
+                    ref={el => cardRefs.current[index] = el}
+                    className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300"
+                  >
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">{patient.name}</h3>
+                          <p className="text-sm text-gray-500 flex items-center mt-1">
+                            <UserCircleIcon className="h-4 w-4 mr-1 text-gray-400" />
+                            Submitted by: {userNames[patient.userId] || 'Loading user...'}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => togglePatientExpansion(patient.id)}
+                            className="text-xs px-3 py-1 rounded-full font-medium flex items-center transition-colors duration-200 "
+                            style={{
+                              backgroundColor: expandedPatient === patient.id ? '#eef2ff' : 'transparent',
+                              color: expandedPatient === patient.id ? '#4f46e5' : '#6b7280',
+                            }}
+                          >
+                            {expandedPatient === patient.id
+                              ? <ChevronUpIcon className="h-4 w-4 mr-1" />
+                              : <ChevronDownIcon className="h-4 w-4 mr-1" />
+                            }
+                            {expandedPatient === patient.id ? 'Hide' : 'Details'}
+                          </button>
+                          <button
+                            onClick={() => openDeleteConfirmation(patient.id, patient.name)}
+                            className="text-red-500 hover:text-red-700 p-1.5 rounded-full hover:bg-red-100 transition-colors duration-200"
+                            title="Delete Patient Record"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                    </td>
-                  </tr>
-                ) : error ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-4 text-red-600">{error}</td>
-                  </tr>
-                ) : (
-                  patients.map((patient) => (
-                    <React.Fragment key={patient.id}>
-                      <tr
-                        onClick={() => togglePatientDetails(patient.id)}
-                        className={`hover:bg-gray-50 cursor-pointer transition-colors ${
-                          expandedPatient === patient.id ? 'bg-gray-50' : ''
-                        }`}
+
+                      <Transition
+                        show={expandedPatient === patient.id}
+                        enter="transition ease-out duration-100"
+                        enterFrom="transform opacity-0 scale-95"
+                        enterTo="transform opacity-100 scale-100"
+                        leave="transition ease-in duration-75"
+                        leaveFrom="transform opacity-100 scale-100"
+                        leaveTo="transform opacity-0 scale-95"
                       >
-                        <td className="px-6 py-4 whitespace-nowrap">{patient.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap capitalize">{patient.gender}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">{formatDate(patient.date_of_birth)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">{patient.submitter_name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap flex items-center justify-between">
-                          <span>{formatDate(patient.created_at)}</span>
-                          {expandedPatient === patient.id ? (
-                            <ChevronUp className="h-5 w-5 text-gray-400" />
-                          ) : (
-                            <ChevronDown className="h-5 w-5 text-gray-400" />
+                        <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
+                          <div className="grid grid-cols-3 gap-4 text-sm">
+                            <div>
+                              <dt className="text-gray-500 font-medium">Gender</dt>
+                              <dd className="text-gray-900 mt-1">{patient.gender}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-gray-500 font-medium">Date of Birth</dt>
+                              <dd className="text-gray-900 mt-1">{formatDate(patient.dateOfBirth)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-gray-500 font-medium">Submitted</dt>
+                              <dd className="text-gray-900 mt-1">{formatDate(patient.createdAt)}</dd>
+                            </div>
+                          </div>
+
+                          {(patient.medicalConditions?.length > 0 || patient.previousSurgeries?.length > 0 || patient.allergies?.length > 0 || patient.medicines?.length > 0) && (
+                            <div className="pt-4 border-t border-gray-200 text-sm">
+                              <h4 className="font-medium text-gray-900 mb-2 flex items-center"><ClipboardDocumentListIcon className="h-5 w-5 mr-2 text-gray-400" />Medical History</h4>
+                              <dl className="space-y-2">
+                                {patient.medicalConditions?.length > 0 && (
+                                  <div className="flex">
+                                    <dt className="w-1/4 text-gray-500 font-medium flex-shrink-0">Conditions</dt>
+                                    <dd className="text-gray-900">{patient.medicalConditions.join(', ')}</dd>
+                                  </div>
+                                )}
+                                {patient.previousSurgeries?.length > 0 && (
+                                  <div className="flex">
+                                    <dt className="w-1/4 text-gray-500 font-medium flex-shrink-0">Surgeries</dt>
+                                    <dd className="text-gray-900">{patient.previousSurgeries.join(', ')}</dd>
+                                  </div>
+                                )}
+                                {patient.allergies?.length > 0 && (
+                                  <div className="flex">
+                                    <dt className="w-1/4 text-gray-500 font-medium flex-shrink-0">Allergies</dt>
+                                    <dd className="text-gray-900">{patient.allergies.join(', ')}</dd>
+                                  </div>
+                                )}
+                                {patient.medicines?.length > 0 && (
+                                  <div className="flex">
+                                    <dt className="w-1/4 text-gray-500 font-medium flex-shrink-0">Medications</dt>
+                                    <dd className="text-gray-900">{patient.medicines.join(', ')}</dd>
+                                  </div>
+                                )}
+                              </dl>
+                            </div>
                           )}
-                        </td>
-                      </tr>
-                      {expandedPatient === patient.id && (
-                        <tr>
-                          <td colSpan={5} className="px-6 py-4 bg-gray-50">
-                            <div className="space-y-4">
-                              <div>
-                                <h3 className="font-semibold">Medical Information</h3>
-                                <div className="grid grid-cols-2 gap-4 mt-2">
-                                  <div>
-                                    <h4 className="font-medium">Medicines</h4>
-                                    <ul className="list-disc list-inside">
-                                      {patient.medicines.map((med, i) => (
-                                        <li key={i}>{med}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                  <div>
-                                    <h4 className="font-medium">Medical Conditions</h4>
-                                    <ul className="list-disc list-inside">
-                                      {patient.medical_conditions.map((condition, i) => (
-                                        <li key={i}>{condition}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                </div>
-                              </div>
-                              <div>
-                                <h3 className="font-semibold">Dental Information</h3>
-                                <div className="grid grid-cols-2 gap-4 mt-2">
-                                  {Object.entries(patient.affected_teeth).map(([condition, teeth]) => (
-                                    <div key={condition}>
-                                      <h4 className="font-medium capitalize">
-                                        {condition.replace(/([A-Z])/g, ' $1').trim()}
-                                      </h4>
-                                      <p>{teeth.join(', ') || 'None'}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="mt-4">
-                                <h3 className="font-semibold">Uploaded Files</h3>
-                                <div className="grid grid-cols-2 gap-4 mt-2">
-                                  <div>
-                                    <h4 className="font-medium">X-Ray Images</h4>
-                                    <div className="grid grid-cols-2 gap-4 mt-2">
-                                      {patient.images && patient.images.length > 0 ? (
-                                        patient.images.map((imagePath, index) => {
-                                          const imageUrl = getImageUrl(imagePath);
-                                          return imageUrl ? (
-                                            <div key={index} className="relative group">
-                                              <img
-                                                src={imageUrl}
-                                                alt={`X-ray ${index + 1}`}
-                                                className="w-full h-40 object-cover rounded cursor-pointer"
-                                                onClick={(e) => {
-                                                  e.preventDefault();
-                                                  e.stopPropagation();
-                                                  window.open(imageUrl, '_blank');
-                                                }}
-                                                onError={(e) => {
-                                                  const imgElement = e.target as HTMLImageElement;
-                                                  imgElement.src = '/images/placeholder-image.png';
-                                                }}
-                                              />
-                                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity flex items-center justify-center">
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    window.open(imageUrl, '_blank');
-                                                  }}
-                                                  className="opacity-0 group-hover:opacity-100 bg-white text-gray-800 px-4 py-2 rounded shadow"
-                                                >
-                                                  View Full Size
-                                                </button>
-                                              </div>
-                                            </div>
-                                          ) : null;
-                                        })
-                                      ) : (
-                                        <p className="text-gray-500 italic">No X-ray images uploaded</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                  
-                                  <div>
-                                    <h4 className="font-medium">3D Models</h4>
-                                    <div className="space-y-2 mt-2">
-                                      {patient.model_files && patient.model_files.length > 0 ? (
-                                        patient.model_files.map((path, index) => {
-                                          const modelUrl = getImageUrl(path);
-                                          return modelUrl ? (
-                                            <div key={index} className="flex items-center justify-between p-2 bg-gray-100 rounded">
-                                              <span>{path.split('/').pop()}</span>
-                                              <button
-                                                onClick={() => window.open(modelUrl, '_blank')}
-                                                className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
-                                              >
-                                                <Download className="h-4 w-4" />
-                                              </button>
-                                            </div>
-                                          ) : null;
-                                        })
-                                      ) : (
-                                        <p className="text-gray-500 italic">No 3D models uploaded</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
+
+                          {patient.affectedTeeth && Object.values(patient.affectedTeeth).some(arr => arr?.length > 0) && (
+                            <div className="pt-4 border-t border-gray-200 text-sm">
+                              <h4 className="font-medium text-gray-900 mb-2 flex items-center"><ShieldCheckIcon className="h-5 w-5 mr-2 text-gray-400" />Dental Chart Summary</h4>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
+                                {Object.entries(patient.affectedTeeth)
+                                  .filter(([, teeth]) => Array.isArray(teeth) && teeth.length > 0)
+                                  .map(([condition, teeth]) => {
+                                    const conditionName = condition.replace(/([A-Z])/g, ' $1').trim();
+                                    return (
+                                      <div key={condition} className="flex items-center space-x-1.5">
+                                        <img
+                                          src={conditionIcons[condition] || '/images/dental/question-mark.svg'}
+                                          alt={conditionName}
+                                          className="h-5 w-5 flex-shrink-0"
+                                          title={conditionName}
+                                        />
+                                        <span className="text-gray-600 capitalize">{conditionName}:</span>
+                                        <span className="text-gray-900 font-medium">{teeth.join(', ')}</span>
+                                      </div>
+                                    );
+                                  })}
                               </div>
                             </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))
-                )}
-              </tbody>
-            </table>
+                          )}
 
-            <div className="px-4 py-3 border-t flex items-center justify-between">
-              <div>
-                Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalPatients)} of {totalPatients} entries
+                          {(patient.xrayImage || patient.model_files?.length > 0) && (
+                            <div className="pt-4 border-t border-gray-200 text-sm">
+                              <h4 className="font-medium text-gray-900 mb-2 flex items-center"><EyeIcon className="h-5 w-5 mr-2 text-gray-400" />Medical Images</h4>
+                              <div className="space-y-4">
+                                {patient.xrayImage && (
+                                  <div>
+                                    <h6 className="text-xs font-medium text-gray-500 mb-1">X-Ray Image</h6>
+                                    <img
+                                      src={patient.xrayImage}
+                                      alt={`${patient.name} X-Ray`}
+                                      className="max-w-full h-auto rounded-lg shadow-md border border-gray-200"
+                                    />
+                                  </div>
+                                )}
+                                {patient.model_files?.length > 0 && (
+                                  <div>
+                                    <h6 className="text-xs font-medium text-gray-500 mb-1">3D Scan Files</h6>
+                                    <div className="space-y-1">
+                                      {patient.model_files.map((file, index) => (
+                                        <a
+                                          key={index}
+                                          href={file}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center text-sm text-indigo-600 hover:text-indigo-900"
+                                        >
+                                          <CubeIcon className="h-4 w-4 mr-2" />
+                                          Model File {index + 1}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </Transition>
+                    </div>
+                  </div>
+                ))}
+                {!loading && filteredPatients.length === 0 && (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500">No patients found matching your search criteria.</p>
+                  </div>
+                )}
               </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 border rounded disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1 border rounded disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+            )}
           </div>
-        </div>
-      </main>
+        ) : (
+          <AdminUsers />
+        )}
+      </div>
+
+      <ConfirmationDialog
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Patient Record?"
+        message={
+          <>Are you sure you want to delete the patient record for <strong className="text-gray-900">{patientToDelete?.name || 'this patient'}</strong>? This action cannot be undone.</>
+        }
+        confirmButtonText="Delete"
+      />
     </div>
   );
-}
+};
+
+export default AdminPanel;

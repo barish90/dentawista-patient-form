@@ -1,28 +1,37 @@
-import React, { useState, useEffect } from "react";
-import { User, Calendar, Plus, X, LogOut, Minus } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { db, auth } from "../lib/firebase";
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  Timestamp,
+  doc,
+  getDoc
+} from 'firebase/firestore';
+import { gsap } from 'gsap';
 import { TeethDiagram } from "./TeethDiagram";
-import { ImageUploader } from "./ImageUploader";
-import { v4 as uuidv4 } from "uuid";
-import { ImageViewer } from "./ImageViewer";
-import { SuccessAnimation } from "./SuccessAnimation";
+import SuccessAnimation from "./SuccessAnimation";
+import ConfirmationDialog from "./ConfirmationDialog";
+import {
+  UserIcon,
+  PlusIcon,
+  XMarkIcon,
+  ArrowLeftOnRectangleIcon,
+  Cog6ToothIcon
+} from '@heroicons/react/24/outline';
+import ImageUploader from './ImageUploader';
 
-interface PatientForm {
+interface PatientData {
   name: string;
   gender: string;
   dateOfBirth: string;
+  medicalConditions: string[];
+  previousSurgeries: string[];
+  allergies: string[];
   medicines: string[];
-  hasCavity: string;
-  needsRootCanal: string;
-  needsImplant: string;
-  needsExtraction: string;
-  missingTooth: string;
-  rootTreated: string;
-  existingImplant: string;
-  hasAmalgam: string;
-  hasBrokenTeeth: string;
-  hasCrown: string;
+  userId: string;
+  createdAt?: Timestamp;
   affectedTeeth: {
     cavity: number[];
     rootCanal: number[];
@@ -35,45 +44,25 @@ interface PatientForm {
     broken: number[];
     crown: number[];
   };
-  medicalConditions: string[];
-  previousSurgeries: string[];
-  allergies: string[];
-  images?: string[];
-  model_files?: string[];
+  xrayImageUrl?: string | null;
 }
 
-interface PatientFormData {
-  name: string;
-  age: number;
-  gender: string;
-  medical_history: string;
-  affected_teeth: string[];
-  treatment_plan: string;
-  user_id: string;
+interface UserOrgProfile {
+  organizationName?: string;
+  organizationAddress?: string;
+  organizationTaxId?: string;
+  organizationPhoneNumber?: string;
 }
 
-interface FileUpload {
-  path: string;
-  type: "image" | "model";
-  originalName: string;
-  url?: string;
-}
-
-const initialForm: PatientForm = {
+const initialPatientData: PatientData = {
   name: "",
   gender: "",
   dateOfBirth: "",
+  medicalConditions: [],
+  previousSurgeries: [],
+  allergies: [],
   medicines: [],
-  hasCavity: "",
-  needsRootCanal: "",
-  needsImplant: "",
-  needsExtraction: "",
-  missingTooth: "",
-  rootTreated: "",
-  existingImplant: "",
-  hasAmalgam: "",
-  hasBrokenTeeth: "",
-  hasCrown: "",
+  userId: "",
   affectedTeeth: {
     cavity: [],
     rootCanal: [],
@@ -86,1158 +75,734 @@ const initialForm: PatientForm = {
     broken: [],
     crown: [],
   },
-  medicalConditions: [],
-  previousSurgeries: [],
-  allergies: [],
+  xrayImageUrl: null
 };
 
-const upperTeeth = [
-  18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28,
-];
-const lowerTeeth = [
-  48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38,
-];
-
-export default function PatientForm({ session }: { session: any }) {
+const PatientForm = () => {
   const navigate = useNavigate();
-  const [form, setForm] = useState<PatientForm>(initialForm);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-  const [newMedicine, setNewMedicine] = useState("");
-  const [userName, setUserName] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const pageContainerRef = useRef<HTMLDivElement>(null);
+  const [patientData, setPatientData] = useState<PatientData>(initialPatientData);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [selectedCondition, setSelectedCondition] = useState<string>("cavity");
   const [newCondition, setNewCondition] = useState("");
-  const [newSurgery, setNewSurgery] = useState("");
-  const [newAllergy, setNewAllergy] = useState("");
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [scale, setScale] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  const [newMedicine, setNewMedicine] = useState("");
+  const [xrayPreview, setXrayPreview] = useState<string | null>(null);
+  const [modelFiles, setModelFiles] = useState<File[]>([]);
 
-  React.useEffect(() => {
-    if (session?.user?.user_metadata) {
-      const name =
-        session.user.user_metadata.name ||
-        session.user.user_metadata.full_name ||
-        session.user.user_metadata.email;
-      setUserName(name);
-    }
-  }, [session]);
+  const [profileLoading, setProfileLoading] = useState<boolean>(true);
+  const [isProfileComplete, setIsProfileComplete] = useState<boolean>(false);
+  const [showProfileDialog, setShowProfileDialog] = useState<boolean>(false);
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
-  };
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      setProfileLoading(true);
+      setShowProfileDialog(false);
+      const user = auth.currentUser;
+      if (!user) {
+        setProfileLoading(false);
+        navigate('/login');
+        return;
+      }
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        const docSnap = await getDoc(userDocRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data() as UserOrgProfile & { organizationAddress?: { street?: string; city?: string; postalCode?: string; country?: string; state?: string; } };
+          const addressComplete = !!(data.organizationAddress?.street?.trim() &&
+            data.organizationAddress?.city?.trim() &&
+            data.organizationAddress?.postalCode?.trim() &&
+            data.organizationAddress?.country?.trim());
+          const complete = !!(data.organizationName?.trim() &&
+            addressComplete &&
+            data.organizationTaxId?.trim() &&
+            data.organizationPhoneNumber?.trim());
+          setIsProfileComplete(complete);
+        } else {
+          setIsProfileComplete(false);
+        }
+      } catch (_err) {
+        setIsProfileComplete(false);
+      } finally {
+        setProfileLoading(false);
+      }
+    };
 
-  const addMedicine = () => {
-    if (newMedicine.trim()) {
-      setForm((prev) => ({
-        ...prev,
-        medicines: [...prev.medicines, newMedicine.trim()],
-      }));
-      setNewMedicine("");
-    }
-  };
+    fetchUserProfile();
+  }, [navigate]);
 
-  const removeMedicine = (index: number) => {
-    setForm((prev) => ({
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      if (pageContainerRef.current) {
+        const initialDelay = 0.3;
+
+        gsap.from(".form-header > *", {
+          opacity: 0,
+          y: 30,
+          duration: 0.5,
+          stagger: 0.15,
+          ease: 'power2.out',
+          delay: initialDelay
+        });
+
+        gsap.from(".form-section", {
+          opacity: 0,
+          y: 50,
+          duration: 0.6,
+          stagger: 0.2,
+          ease: 'power3.out',
+          delay: initialDelay + 0.15
+        });
+      }
+    }, pageContainerRef);
+
+    return () => ctx.revert();
+  }, []);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setPatientData(prev => ({
       ...prev,
-      medicines: prev.medicines.filter((_, i) => i !== index),
+      [name]: value
     }));
   };
 
   const addCondition = () => {
     if (newCondition.trim()) {
-      setForm((prev) => ({
+      setPatientData(prev => ({
         ...prev,
-        medicalConditions: [...prev.medicalConditions, newCondition.trim()],
+        medicalConditions: [...prev.medicalConditions, newCondition.trim()]
       }));
       setNewCondition("");
     }
   };
 
   const removeCondition = (index: number) => {
-    setForm((prev) => ({
+    setPatientData(prev => ({
       ...prev,
-      medicalConditions: prev.medicalConditions.filter((_, i) => i !== index),
+      medicalConditions: prev.medicalConditions.filter((_, i) => i !== index)
     }));
   };
 
-  const addSurgery = () => {
-    if (newSurgery.trim()) {
-      setForm((prev) => ({
+  const addMedicine = () => {
+    if (newMedicine.trim()) {
+      setPatientData(prev => ({
         ...prev,
-        previousSurgeries: [...prev.previousSurgeries, newSurgery.trim()],
+        medicines: [...prev.medicines, newMedicine.trim()]
       }));
-      setNewSurgery("");
+      setNewMedicine("");
     }
   };
 
-  const removeSurgery = (index: number) => {
-    setForm((prev) => ({
+  const removeMedicine = (index: number) => {
+    setPatientData(prev => ({
       ...prev,
-      previousSurgeries: prev.previousSurgeries.filter((_, i) => i !== index),
+      medicines: prev.medicines.filter((_, i) => i !== index)
     }));
   };
 
-  const addAllergy = () => {
-    if (newAllergy.trim()) {
-      setForm((prev) => ({
-        ...prev,
-        allergies: [...prev.allergies, newAllergy.trim()],
-      }));
-      setNewAllergy("");
+  const handleToothClick = (tooth: number, e: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
-  };
 
-  const removeAllergy = (index: number) => {
-    setForm((prev) => ({
-      ...prev,
-      allergies: prev.allergies.filter((_, i) => i !== index),
-    }));
-  };
+    if (selectedCondition === "missing") {
+      setPatientData(prev => {
+        const isMissing = prev.affectedTeeth.missing.includes(tooth);
+        const newMissingTeeth = isMissing
+          ? prev.affectedTeeth.missing.filter(t => t !== tooth)
+          : [...prev.affectedTeeth.missing, tooth];
 
-  const toggleTooth = (
-    tooth: number,
-    condition: keyof PatientForm["affectedTeeth"]
-  ) => {
-    setForm((prev) => {
-      const teeth = prev.affectedTeeth[condition];
-      const newTeeth = teeth.includes(tooth)
-        ? teeth.filter((t) => t !== tooth)
-        : [...teeth, tooth];
+        const newAffectedTeeth = { ...prev.affectedTeeth };
+        if (!isMissing) {
+          Object.keys(newAffectedTeeth).forEach(condition => {
+            if (condition !== "missing") {
+              newAffectedTeeth[condition as keyof typeof newAffectedTeeth] =
+                newAffectedTeeth[condition as keyof typeof newAffectedTeeth].filter(t => t !== tooth);
+            }
+          });
+        }
+
+        return {
+          ...prev,
+          affectedTeeth: {
+            ...newAffectedTeeth,
+            missing: newMissingTeeth
+          }
+        };
+      });
+      return;
+    }
+
+    if (patientData.affectedTeeth.missing.includes(tooth) && selectedCondition !== "implant") {
+      return;
+    }
+
+    setPatientData(prev => {
+      const currentTeeth = prev.affectedTeeth[selectedCondition as keyof typeof prev.affectedTeeth];
+      const isSelected = currentTeeth.includes(tooth);
+      const newTeeth = isSelected
+        ? currentTeeth.filter(t => t !== tooth)
+        : [...currentTeeth, tooth];
 
       return {
         ...prev,
         affectedTeeth: {
           ...prev.affectedTeeth,
-          [condition]: newTeeth,
-        },
+          [selectedCondition]: newTeeth
+        }
       };
     });
   };
 
-  const handleFileUpload = async (
-    file: File,
-    type: "image" | "model"
-  ): Promise<FileUpload | null> => {
-    try {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}_${uuidv4()}.${fileExt}`;
-      const bucketName = type === "image" ? "xray-images" : "model-files";
-
-      const { data, error: uploadError } = await supabase.storage
-        .from(bucketName)
-        .upload(fileName, file, {
-          cacheControl: "3600",
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
-      if (!data?.path) throw new Error("No path returned from upload");
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from(bucketName).getPublicUrl(data.path);
-
-      return {
-        path: data.path,
-        type,
-        originalName: file.name,
-        url: publicUrl,
-      };
-    } catch (error) {
-      setMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Error uploading file",
-      });
-      return null;
-    }
-  };
-
-  const handleImageSelect = async (file: File) => {
-    try {
-      const previewUrl = URL.createObjectURL(file);
-      setPreviewImage(previewUrl);
-
-      const upload = await handleFileUpload(file, "image");
-      if (upload) {
-        setForm((prev) => ({
-          ...prev,
-          images: [...(prev.images || []), upload.path],
-        }));
-      }
-    } catch (error) {
-      console.error("Error handling image selection:", error);
-      setMessage({
-        type: "error",
-        text: "Failed to upload image. Please try again.",
-      });
-    }
-  };
-
-  const handleModelSelect = async (file: File) => {
-    const upload = await handleFileUpload(file, "model");
-    if (upload) {
-      setForm((prev) => ({
-        ...prev,
-        model_files: [...(prev.model_files || []), upload.path],
-      }));
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (previewImage) {
-        URL.revokeObjectURL(previewImage);
-      }
-    };
-  }, [previewImage]);
-
-  const TeethSelector = ({
-    condition,
-  }: {
-    condition: keyof PatientForm["affectedTeeth"];
-  }) => {
-    const showSelector = () => {
-      switch (condition) {
-        case "cavity":
-          return form.hasCavity === "yes";
-        case "rootCanal":
-          return form.needsRootCanal === "yes";
-        case "implant":
-          return form.needsImplant === "yes";
-        case "extraction":
-          return form.needsExtraction === "yes";
-        case "missing":
-          return form.missingTooth === "yes";
-        case "treated":
-          return form.rootTreated === "yes";
-        case "existingImplant":
-          return form.existingImplant === "yes";
-        case "amalgam":
-          return form.hasAmalgam === "yes";
-        case "broken":
-          return form.hasBrokenTeeth === "yes";
-        case "crown":
-          return form.hasCrown === "yes";
-        default:
-          return false;
-      }
-    };
-
-    if (!showSelector()) {
-      return null;
-    }
-
-    // Get all selected teeth from all conditions
-    const allSelectedTeeth = {
-      cavity: form.hasCavity === "yes" ? form.affectedTeeth.cavity : [],
-      rootCanal:
-        form.needsRootCanal === "yes" ? form.affectedTeeth.rootCanal : [],
-      implant: form.needsImplant === "yes" ? form.affectedTeeth.implant : [],
-      extraction:
-        form.needsExtraction === "yes" ? form.affectedTeeth.extraction : [],
-      missing: form.missingTooth === "yes" ? form.affectedTeeth.missing : [],
-      treated: form.rootTreated === "yes" ? form.affectedTeeth.treated : [],
-      existingImplant:
-        form.existingImplant === "yes"
-          ? form.affectedTeeth.existingImplant
-          : [],
-      amalgam: form.hasAmalgam === "yes" ? form.affectedTeeth.amalgam : [],
-      broken: form.hasBrokenTeeth === "yes" ? form.affectedTeeth.broken : [],
-      crown: form.hasCrown === "yes" ? form.affectedTeeth.crown : [],
-    };
-
-    // Function to check if a tooth should be disabled
-    const shouldDisableTooth = (toothNumber: number) => {
-      const isMissing = form.affectedTeeth.missing.includes(toothNumber);
-
-      // If the current condition is 'implant', don't disable missing teeth
-      if (condition === "implant") {
-        return false;
-      }
-
-      // For all other conditions, disable if the tooth is marked as missing
-      return isMissing;
-    };
-
-    return (
-      <TeethDiagram
-        selectedTeeth={form.affectedTeeth[condition]}
-        onToothClick={(tooth) => toggleTooth(tooth, condition)}
-        upperTeeth={upperTeeth}
-        lowerTeeth={lowerTeeth}
-        condition={condition}
-        missingTeeth={form.affectedTeeth.missing}
-        allSelectedTeeth={allSelectedTeeth}
-        shouldDisableTooth={shouldDisableTooth}
-      />
-    );
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleConditionClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-
-    try {
-      if (form.images?.length === 0 && previewImage) {
-        setMessage({
-          type: "error",
-          text: "Lütfen görüntü yüklemesinin tamamlanmasını bekleyin",
-        });
-        return;
-      }
-
-      const patientData = {
-        name: form.name,
-        gender: form.gender,
-        date_of_birth: form.dateOfBirth,
-        medicines: form.medicines,
-        medical_conditions: form.medicalConditions,
-        previous_surgeries: form.previousSurgeries,
-        allergies: form.allergies,
-        affected_teeth: form.affectedTeeth,
-        has_cavity: form.hasCavity === "yes",
-        needs_root_canal: form.needsRootCanal === "yes",
-        needs_implant: form.needsImplant === "yes",
-        needs_extraction: form.needsExtraction === "yes",
-        missing_tooth: form.missingTooth === "yes",
-        root_treated: form.rootTreated === "yes",
-        existing_implant: form.existingImplant === "yes",
-        has_amalgam: form.hasAmalgam === "yes",
-        has_broken_teeth: form.hasBrokenTeeth === "yes",
-        has_crown: form.hasCrown === "yes",
-        images: form.images || [],
-        model_files: form.model_files || [],
-        submitted_by_id: session.user.id,
-      };
-
-      const { error } = await supabase.from("patients").insert([patientData]);
-
-      if (error) throw error;
-
-      setShowSuccessAnimation(true);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Hasta verilerini kaydederken bir hata oluştu";
-      setMessage({ type: "error", text: errorMessage });
+    e.stopPropagation();
+    const condition = e.currentTarget.dataset.condition;
+    if (condition) {
+      setSelectedCondition(condition);
     }
   };
 
-  const handleAnimationComplete = () => {
-    setShowSuccessAnimation(false);
-    setMessage({
-      type: "success",
-      text: "Hasta bilgileri başarıyla kaydedildi!",
-    });
-    setForm(initialForm);
-    setPreviewImage(null);
-    setScale(1);
-    setPosition({ x: 0, y: 0 });
+  const handleXrayImageSelect = (file: File) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setXrayPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleZoomIn = () => {
-    setScale((prev) => Math.min(prev + 0.25, 3));
+  const handleModelFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setModelFiles(files);
   };
 
-  const handleZoomOut = () => {
-    setScale((prev) => Math.max(prev - 0.25, 0.5));
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!isProfileComplete && !profileLoading) {
+      setShowProfileDialog(true);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setShowSuccess(false);
+    const user = auth.currentUser;
+
+    if (!user) {
+      console.error("User not logged in");
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const dataToSubmit: PatientData = {
+        ...patientData,
+        userId: user.uid,
+        createdAt: serverTimestamp() as Timestamp,
+        affectedTeeth: patientData.affectedTeeth,
+        xrayImageUrl: xrayPreview
+      };
+
+      // --- Re-enable Firestore write ---
+      // const docRef = await addDoc(collection(db, "patients"), dataToSubmit);
+      await addDoc(collection(db, "patients"), dataToSubmit); // Call addDoc without storing the ref
+      // console.log("Document written with ID: ", docRef.id); // Remove user-facing log
+      // --- End Re-enable ---
+
+      setShowSuccess(true);
+
+      setTimeout(() => {
+        setPatientData(initialPatientData);
+        setXrayPreview(null);
+        setShowSuccess(false);
+        setIsSubmitting(false);
+        window.scrollTo(0, 0);
+      }, 3500);
+
+    } catch (error) {
+      console.error("Error adding document: ", error);
+      setIsSubmitting(false);
+    }
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    });
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-
-    setPosition({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y,
-    });
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+  const disableSubmit = isSubmitting || profileLoading;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-12 px-4 sm:px-6 lg:px-8">
-      {showSuccessAnimation && (
-        <SuccessAnimation onComplete={handleAnimationComplete} />
-      )}
-      <div className="max-w-2xl mx-auto">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center text-sm text-gray-600">
-            <User className="h-5 w-5 mr-2 text-gray-400" />
-            {userName}
+    <div ref={pageContainerRef} className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex justify-between items-center mb-6 form-header">
+          <div className="flex items-center space-x-2">
+            <UserIcon className="h-6 w-6 text-gray-600" />
+            <span className="text-gray-700">
+              {/* Prioritize displayName, fallback to email, then 'User' */}
+              {auth.currentUser?.displayName || auth.currentUser?.email || 'User'}
+            </span>
           </div>
-          <button
-            onClick={handleSignOut}
-            className="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center"
-          >
-            <LogOut className="h-5 w-5 mr-2" />
-            Çıkış Yap
-          </button>
+          <div className="flex items-center space-x-3">
+            <Link
+              to="/profile"
+              className="flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 transition-colors"
+              title="Edit My Profile"
+            >
+              <Cog6ToothIcon className="h-5 w-5 mr-2" />
+              My Profile
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 transition-colors"
+              title="Logout"
+            >
+              <ArrowLeftOnRectangleIcon className="h-5 w-5 mr-2" />
+              Logout
+            </button>
+          </div>
         </div>
 
-        <div className="text-center mb-12">
-          <div className="flex justify-center mb-4">
+        <div className="text-center mb-12 form-header">
+          <div className="flex justify-center mb-6">
             <img
-              src="https://i.imgur.com/umOU4WN.png"
-              alt="DentaWista Logo"
-              className="h-20 w-auto"
+              src="/images/logos/logo.png"
+              alt="Dentawista Logo"
+              className="h-32 w-auto"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src = "/images/logos/logo.png";
+              }}
             />
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            DentaWista Hasta Formu
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            Dentawista - Patient Registration
           </h1>
           <p className="text-lg text-gray-600">
-            Lütfen hastanın diş bilgilerini doldurun
+            Please fill in the patient's information below
           </p>
         </div>
 
-        {message && (
-          <div
-            className={`mb-6 p-4 rounded-md ${
-              message.type === "success"
-                ? "bg-green-50 text-green-800"
-                : "bg-red-50 text-red-800"
-            }`}
-          >
-            {message.type === "success"
-              ? "Hasta bilgileri başarıyla kaydedildi!"
-              : message.text}
-          </div>
-        )}
-
         <form
-          onSubmit={handleSubmit}
-          className="bg-white shadow-xl rounded-lg px-8 pt-6 pb-8 mb-4"
+          ref={formRef}
+          onSubmit={handleFormSubmit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+            }
+          }}
+          className="bg-white rounded-2xl shadow-xl p-8 space-y-8"
         >
-          {/* Hasta Bilgileri Bölümü */}
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">
-              Hasta Bilgileri
+          <section className="space-y-6 form-section">
+            <h2 className="text-2xl font-semibold text-gray-900 flex items-center">
+              <UserIcon className="h-6 w-6 mr-2 text-blue-600" />
+              Basic Information
             </h2>
-
-            <div>
-              <label
-                className="block text-gray-700 text-sm font-bold mb-2"
-                htmlFor="name"
-              >
-                Hasta Adı
-              </label>
-              <div className="flex items-center">
-                <User className="h-5 w-5 text-gray-400 mr-2" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name
+                </label>
                 <input
-                  id="name"
                   type="text"
+                  name="name"
+                  value={patientData.name}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
                   required
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="Hasta adını giriniz"
                 />
               </div>
-            </div>
-
-            <div>
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Cinsiyet
-              </label>
-              <div className="flex gap-4">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    required
-                    value="male"
-                    checked={form.gender === "male"}
-                    onChange={(e) =>
-                      setForm({ ...form, gender: e.target.value })
-                    }
-                    className="mr-2"
-                  />
-                  Erkek
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Gender
                 </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    required
-                    value="female"
-                    checked={form.gender === "female"}
-                    onChange={(e) =>
-                      setForm({ ...form, gender: e.target.value })
-                    }
-                    className="mr-2"
-                  />
-                  Kadın
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    required
-                    value="other"
-                    checked={form.gender === "other"}
-                    onChange={(e) =>
-                      setForm({ ...form, gender: e.target.value })
-                    }
-                    className="mr-2"
-                  />
-                  Diğer
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Doğum Tarihi
-              </label>
-              <div className="flex items-center">
-                <Calendar className="h-5 w-5 text-gray-400 mr-2" />
-                <input
-                  type="date"
+                <select
+                  name="gender"
+                  value={patientData.gender}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
                   required
-                  value={form.dateOfBirth}
-                  onChange={(e) =>
-                    setForm({ ...form, dateOfBirth: e.target.value })
-                  }
-                  className="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Kullanılan İlaçlar
-              </label>
-              <div className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  value={newMedicine}
-                  onChange={(e) => setNewMedicine(e.target.value)}
-                  className="shadow border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="İlaç adını giriniz"
-                />
-                <button
-                  type="button"
-                  onClick={addMedicine}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-md flex items-center"
                 >
-                  <Plus className="h-5 w-5" />
-                </button>
+                  <option value="">Select Gender</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
-              <div className="space-y-2">
-                {form.medicines.map((medicine, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
-                  >
-                    <span>{medicine}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeMedicine(index)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Sağlık Durumu
-              </label>
-              <div className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  value={newCondition}
-                  onChange={(e) => setNewCondition(e.target.value)}
-                  className="shadow border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="Sağlık durumunu giriniz"
-                />
-                <button
-                  type="button"
-                  onClick={addCondition}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-md flex items-center"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="space-y-2">
-                {form.medicalConditions.map((condition, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
-                  >
-                    <span>{condition}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeCondition(index)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date of Birth
+                </label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    name="dateOfBirth"
+                    value={patientData.dateOfBirth}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                    required
+                  />
+                </div>
               </div>
             </div>
+          </section>
 
-            <div>
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Geçirilen Ameliyatlar
-              </label>
-              <div className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  value={newSurgery}
-                  onChange={(e) => setNewSurgery(e.target.value)}
-                  className="shadow border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="Ameliyat bilgisini giriniz"
-                />
-                <button
-                  type="button"
-                  onClick={addSurgery}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-md flex items-center"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="space-y-2">
-                {form.previousSurgeries.map((surgery, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
-                  >
-                    <span>{surgery}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeSurgery(index)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Alerjiler
-              </label>
-              <div className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  value={newAllergy}
-                  onChange={(e) => setNewAllergy(e.target.value)}
-                  className="shadow border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  placeholder="Alerji bilgisini giriniz"
-                />
-                <button
-                  type="button"
-                  onClick={addAllergy}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-md flex items-center"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="space-y-2">
-                {form.allergies.map((allergy, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
-                  >
-                    <span>{allergy}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeAllergy(index)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* X-Ray Görüntüleri Bölümü */}
-          <div className="space-y-6 mt-8">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">
-              X-Ray Görüntüleri
-            </h2>
+          <section className="space-y-6 form-section">
+            <h2 className="text-2xl font-semibold text-gray-900">Medical History</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  X-Ray Görüntüleri
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Medical Conditions
                 </label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {patientData.medicalConditions.map((condition, index) => (
+                    <div
+                      key={index}
+                      className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center"
+                    >
+                      {condition}
+                      <button
+                        type="button"
+                        onClick={() => removeCondition(index)}
+                        className="ml-2 text-blue-600 hover:text-blue-800"
+                      >
+                        <XMarkIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex">
+                  <input
+                    type="text"
+                    value={newCondition}
+                    onChange={(e) => setNewCondition(e.target.value)}
+                    className="flex-1 px-4 py-2 rounded-l-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                    placeholder="Add medical condition"
+                  />
+                  <button
+                    type="button"
+                    onClick={addCondition}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 transition duration-200"
+                  >
+                    <PlusIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Medications
+                </label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {patientData.medicines.map((medicine, index) => (
+                    <div
+                      key={index}
+                      className="bg-green-100 text-green-800 px-3 py-1 rounded-full flex items-center"
+                    >
+                      {medicine}
+                      <button
+                        type="button"
+                        onClick={() => removeMedicine(index)}
+                        className="ml-2 text-green-600 hover:text-green-800"
+                      >
+                        <XMarkIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex">
+                  <input
+                    type="text"
+                    value={newMedicine}
+                    onChange={(e) => setNewMedicine(e.target.value)}
+                    className="flex-1 px-4 py-2 rounded-l-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                    placeholder="Add medication"
+                  />
+                  <button
+                    type="button"
+                    onClick={addMedicine}
+                    className="px-4 py-2 bg-green-600 text-white rounded-r-lg hover:bg-green-700 transition duration-200"
+                  >
+                    <PlusIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-6 form-section">
+            <h2 className="text-2xl font-semibold text-gray-900">Medical Images</h2>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-gray-700">X-ray Image</h3>
+              <ImageUploader onImageSelect={handleXrayImageSelect} />
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-gray-700">3D Scan Files</h3>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(e) =>
-                    e.target.files?.[0] && handleImageSelect(e.target.files[0])
-                  }
-                  className="mt-1 block w-full"
+                  multiple
+                  accept=".stl,.obj,.ply"
+                  onChange={handleModelFileSelect}
+                  className="w-full"
+                  onClick={(e) => e.stopPropagation()}
                 />
-
-                {previewImage && (
-                  <div className="mt-4 relative">
-                    <div
-                      className="relative w-full h-64 border rounded-lg overflow-hidden bg-gray-100"
-                      onMouseDown={handleMouseDown}
-                      onMouseMove={handleMouseMove}
-                      onMouseUp={handleMouseUp}
-                      onMouseLeave={handleMouseUp}
-                    >
-                      <img
-                        src={previewImage}
-                        alt="X-ray preview"
-                        className="w-full h-full object-contain select-none"
-                        style={{
-                          transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                          transition: isDragging ? "none" : "transform 0.1s",
-                          cursor: isDragging ? "grabbing" : "grab",
-                        }}
-                        draggable={false}
-                      />
-                      <div className="absolute top-2 right-2 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={handleZoomIn}
-                          className="p-1 bg-white rounded-full shadow hover:bg-gray-100 transition-colors"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleZoomOut}
-                          className="p-1 bg-white rounded-full shadow hover:bg-gray-100 transition-colors"
-                        >
-                          <Minus className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewImage(null);
-                            setScale(1);
-                            setPosition({ x: 0, y: 0 });
-                          }}
-                          className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
+                <p className="mt-2 text-sm text-gray-500">
+                  Supported formats: STL, OBJ, PLY
+                </p>
+                {modelFiles.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium text-gray-700">Selected Files:</h4>
+                    <ul className="mt-2 space-y-1">
+                      {modelFiles.map((file, index) => (
+                        <li key={index} className="text-sm text-gray-600">
+                          {file.name}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>
+            </div>
+          </section>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  3D Modeller (.obj, .ply)
-                </label>
-                <input
-                  type="file"
-                  accept=".obj,.ply"
-                  onChange={(e) =>
-                    e.target.files?.[0] && handleModelSelect(e.target.files[0])
-                  }
-                  className="mt-1 block w-full"
+          <section className="space-y-6 form-section">
+            <h2 className="text-2xl font-semibold text-gray-900">Dental Conditions</h2>
+            <div className="space-y-4">
+              <div className="bg-gray-50 p-6 rounded-xl">
+                <TeethDiagram
+                  selectedTeeth={patientData.affectedTeeth[selectedCondition as keyof typeof patientData.affectedTeeth]}
+                  onToothClick={handleToothClick}
+                  upperTeeth={[18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28]}
+                  lowerTeeth={[48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38]}
+                  condition={selectedCondition}
+                  missingTeeth={patientData.affectedTeeth.missing}
+                  allSelectedTeeth={patientData.affectedTeeth}
+                  shouldDisableTooth={(tooth) => {
+                    return patientData.affectedTeeth.missing.includes(tooth) &&
+                      selectedCondition !== "missing" &&
+                      selectedCondition !== "implant";
+                  }}
+                  showLabels={false}
                 />
               </div>
-            </div>
-          </div>
 
-          {/* Teşhis Bölümü */}
-          <div className="space-y-6 mt-8">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">
-              Teşhis
-            </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                <button
+                  type="button"
+                  data-condition="cavity"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "cavity"
+                    ? "border-red-500 bg-red-100 shadow-md"
+                    : "border-gray-200 hover:border-red-300 hover:bg-red-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/dental-cavity.svg" alt="Cavity" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Cavity</span>
+                  </div>
+                </button>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Eksik Diş
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.missingTooth === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, missingTooth: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.missingTooth === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, missingTooth: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="missing" />
-              </div>
+                <button
+                  type="button"
+                  data-condition="rootCanal"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "rootCanal"
+                    ? "border-blue-500 bg-blue-100 shadow-md"
+                    : "border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/root-canal.svg" alt="Root Canal" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Root Canal</span>
+                  </div>
+                </button>
 
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Kanal Tedavisi Yapılmış
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.rootTreated === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, rootTreated: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.rootTreated === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, rootTreated: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="treated" />
-              </div>
+                <button
+                  type="button"
+                  data-condition="implant"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "implant"
+                    ? "border-purple-500 bg-purple-100 shadow-md"
+                    : "border-gray-200 hover:border-purple-300 hover:bg-purple-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/dental-implant.svg" alt="Implant" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Implant</span>
+                  </div>
+                </button>
 
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Mevcut İmplant
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.existingImplant === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, existingImplant: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.existingImplant === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, existingImplant: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="existingImplant" />
-              </div>
+                <button
+                  type="button"
+                  data-condition="extraction"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "extraction"
+                    ? "border-orange-500 bg-orange-100 shadow-md"
+                    : "border-gray-200 hover:border-orange-300 hover:bg-orange-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/tooth-extraction.svg" alt="Extraction" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Extraction</span>
+                  </div>
+                </button>
 
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Çürük Var
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.hasCavity === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, hasCavity: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.hasCavity === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, hasCavity: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="cavity" />
-              </div>
+                <button
+                  type="button"
+                  data-condition="missing"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "missing"
+                    ? "border-gray-500 bg-gray-100 shadow-md"
+                    : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/tooth-extraction.svg" alt="Missing" className="w-6 h-6 opacity-50" />
+                    <span className="text-sm font-medium">Missing</span>
+                  </div>
+                </button>
 
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Amalgam Dolgu
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.hasAmalgam === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, hasAmalgam: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.hasAmalgam === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, hasAmalgam: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="amalgam" />
-              </div>
+                <button
+                  type="button"
+                  data-condition="treated"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "treated"
+                    ? "border-green-500 bg-green-100 shadow-md"
+                    : "border-gray-200 hover:border-green-300 hover:bg-green-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/healthy-tooth.svg" alt="Treated" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Treated</span>
+                  </div>
+                </button>
 
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Kırık Diş
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.hasBrokenTeeth === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, hasBrokenTeeth: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.hasBrokenTeeth === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, hasBrokenTeeth: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="broken" />
-              </div>
+                <button
+                  type="button"
+                  data-condition="existingImplant"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "existingImplant"
+                    ? "border-yellow-500 bg-yellow-100 shadow-md"
+                    : "border-gray-200 hover:border-yellow-300 hover:bg-yellow-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/dental-implant.svg" alt="Existing Implant" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Existing Implant</span>
+                  </div>
+                </button>
 
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Kron
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.hasCrown === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, hasCrown: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.hasCrown === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, hasCrown: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="crown" />
+                <button
+                  type="button"
+                  data-condition="amalgam"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "amalgam"
+                    ? "border-indigo-500 bg-indigo-100 shadow-md"
+                    : "border-gray-200 hover:border-indigo-300 hover:bg-indigo-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/filling.svg" alt="Amalgam" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Amalgam</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  data-condition="broken"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "broken"
+                    ? "border-pink-500 bg-pink-100 shadow-md"
+                    : "border-gray-200 hover:border-pink-300 hover:bg-pink-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/cracked-tooth.svg" alt="Broken" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Broken</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  data-condition="crown"
+                  onClick={handleConditionClick}
+                  onMouseDown={(e) => e.preventDefault()}
+                  className={`p-3 rounded-lg border-2 transition-all ${selectedCondition === "crown"
+                    ? "border-teal-500 bg-teal-100 shadow-md"
+                    : "border-gray-200 hover:border-teal-300 hover:bg-teal-50"
+                    }`}
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <img src="/images/dental/dental-crown.svg" alt="Crown" className="w-6 h-6" />
+                    <span className="text-sm font-medium">Crown</span>
+                  </div>
+                </button>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* Tedavi Bölümü */}
-          <div className="space-y-6 mt-8">
-            <h2 className="text-2xl font-bold text-gray-900 border-b pb-2">
-              Tedavi
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Kanal Tedavisi Gerekli
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.needsRootCanal === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, needsRootCanal: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.needsRootCanal === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, needsRootCanal: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="rootCanal" />
-              </div>
-
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  İmplant Gerekli
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.needsImplant === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, needsImplant: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.needsImplant === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, needsImplant: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="implant" />
-              </div>
-
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Diş Çekimi Gerekli
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="yes"
-                      checked={form.needsExtraction === "yes"}
-                      onChange={(e) =>
-                        setForm({ ...form, needsExtraction: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Evet
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      required
-                      value="no"
-                      checked={form.needsExtraction === "no"}
-                      onChange={(e) =>
-                        setForm({ ...form, needsExtraction: e.target.value })
-                      }
-                      className="mr-2"
-                    />
-                    Hayır
-                  </label>
-                </div>
-                <TeethSelector condition="extraction" />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8">
-            <button
-              type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-150 ease-in-out"
-            >
-              Kaydet
-            </button>
+          <div className="flex justify-center mt-8 form-section">
+            {profileLoading ? (
+              <button
+                type="button"
+                disabled
+                className="px-8 py-4 rounded-xl text-white font-semibold text-lg bg-gray-400 cursor-wait"
+              >
+                Checking Profile...
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={disableSubmit}
+                className={`px-8 py-4 rounded-xl text-white font-semibold text-lg transition-all duration-300 transform hover:scale-105 ${disableSubmit
+                  ? 'bg-gray-400 cursor-not-allowed opacity-70'
+                  : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl'
+                  }`}
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit'}
+              </button>
+            )}
           </div>
         </form>
       </div>
+
+      {showSuccess && (
+        <SuccessAnimation onComplete={() => setShowSuccess(false)} />
+      )}
+
+      <ConfirmationDialog
+        isOpen={showProfileDialog}
+        onClose={() => setShowProfileDialog(false)}
+        onConfirm={() => navigate('/profile')}
+        title="Profile Incomplete"
+        message={
+          <>
+            Please complete your organization details (Name, Address, Phone, Tax ID) in your profile before submitting a new patient form.
+          </>
+        }
+        confirmButtonText="Go to Profile"
+        cancelButtonText="Close"
+      />
     </div>
   );
-}
+};
+
+export default PatientForm;

@@ -3,7 +3,7 @@ import React from "react";
 interface ToothShapeProps {
   number: number;
   selected: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   condition: string;
   isUpper: boolean;
   isMissing: boolean;
@@ -121,14 +121,17 @@ export const ToothShape: React.FC<ToothShapeProps> = ({
   return (
     <div className="relative w-10 h-14">
       <button
-        onClick={onClick}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onClick(e);
+        }}
         disabled={isDisabled}
         className={`
           absolute inset-0 z-10
-          ${
-            selected
-              ? `ring-4 ring-offset-2 ${getConditionColor(condition)}`
-              : ""
+          ${selected
+            ? `ring-4 ring-offset-2 ${getConditionColor(condition)}`
+            : ""
           }
           ${getToothHighlight()}
           ${isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
